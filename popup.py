@@ -7,11 +7,11 @@ class Popup(QWidget):
     def __init__(self, word, meaning, example, synonyms):
         super().__init__()
         self.setWindowTitle("SARAS - Product by ENGIN.E")
-        self.resize(400, 350)
-        self.setStyleSheet("background-color: #1c1c1c;")
+        self.setFixedSize(450, 350)
+        self.setStyleSheet("background-color: #000000;")
         self.setWindowOpacity(0.9)
 
-        # Layout setups
+        # Layout setup
         LayoutV = QVBoxLayout()
         LayoutV.setContentsMargins(10, 10, 10, 10)
         LayoutV.setSpacing(20)
@@ -20,6 +20,8 @@ class Popup(QWidget):
         Dict = QLabel("Dictionary ───────────────────────────")
         Dict.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         Dict.setFont(QFont("Georgia", 16))
+        Dict.setWordWrap(True)
+        Dict.setStyleSheet("color:white;")
         LayoutV.addWidget(Dict)
 
         # Word with line
@@ -27,6 +29,8 @@ class Popup(QWidget):
         WordLabel = QLabel(word)
         WordLabel.setAlignment(Qt.AlignmentFlag.AlignLeft)
         WordLabel.setFont(QFont("AppleGothic", 18))
+        WordLabel.setStyleSheet("color:white;")
+        WordLabel.setWordWrap(True)
         LayoutH1.addWidget(WordLabel)
 
         sideLine = QFrame()
@@ -40,12 +44,16 @@ class Popup(QWidget):
         MeaningLabel = QLabel(meaning)
         MeaningLabel.setAlignment(Qt.AlignmentFlag.AlignLeft)
         MeaningLabel.setFont(QFont("Georgia", 16))
+        MeaningLabel.setStyleSheet("color:white;")
+        MeaningLabel.setWordWrap(True)
         LayoutV.addWidget(MeaningLabel)
 
         # Example
         ExampleLabel = QLabel(example)
         ExampleLabel.setAlignment(Qt.AlignmentFlag.AlignLeft)
         ExampleLabel.setFont(QFont("Georgia", 16, -1, italic=True))
+        ExampleLabel.setWordWrap(True)
+        ExampleLabel.setStyleSheet("color:white;")
         LayoutV.addWidget(ExampleLabel)
 
         # Spacer
@@ -55,6 +63,8 @@ class Popup(QWidget):
         LayoutH2 = QHBoxLayout()
         SynonymLabel = QLabel("Synonyms")
         SynonymLabel.setFont(QFont("AppleGothic", 16))
+        SynonymLabel.setStyleSheet("color:white;")
+        SynonymLabel.setWordWrap(True)
         LayoutH2.addWidget(SynonymLabel)
 
         sideLine1 = QFrame()
@@ -67,6 +77,8 @@ class Popup(QWidget):
         SynonymsLabel = QLabel(synonyms)
         SynonymsLabel.setAlignment(Qt.AlignmentFlag.AlignLeft)
         SynonymsLabel.setFont(QFont("Georgia", 16))
+        SynonymLabel.setWordWrap(True)
+        SynonymLabel.setStyleSheet("color:white;")
         LayoutV.addWidget(SynonymsLabel)
 
         # Bottom Line
