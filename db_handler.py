@@ -2,7 +2,7 @@ import sqlite3
 import os
 
 def execute_query(query,params=(),fetch = False):   #function FIRST
-    connect = sqlite3.connect('C:/Users/karth/OneDrive/ドキュメント/Desktop/Final_Test/Dictionary.db')
+    connect = sqlite3.connect('C:/Users/karth/OneDrive/ドキュメント/Desktop/Final_Test/dictionary3.db')
     cursor = connect.cursor()
     cursor.execute(query,params)
 
@@ -18,7 +18,7 @@ def execute_query(query,params=(),fetch = False):   #function FIRST
 def get_word_meaning(word):          #Function SECOND
     query='''
     SELECT definition, examples, synonm
-    FROM dictionary
+    FROM dictionary_new
     WHERE word1 = ?
     '''
 
