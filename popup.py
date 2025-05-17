@@ -1,4 +1,4 @@
-from PyQt6.QtWidgets import QWidget, QLabel, QVBoxLayout, QHBoxLayout, QFrame, QSpacerItem, QSizePolicy, QApplication
+from PyQt6.QtWidgets import QWidget, QLabel, QVBoxLayout, QHBoxLayout, QFrame, QSpacerItem, QSizePolicy, QApplication, QScrollArea
 from PyQt6.QtGui import QFont
 from PyQt6.QtCore import Qt
 import sys
@@ -7,14 +7,26 @@ class Popup(QWidget):
     def __init__(self, word, meaning, example, synonyms):
         super().__init__()
         self.setWindowTitle("SARAS - Product by ENGIN.E")
-        self.setFixedSize(450, 350)
+        self.resize(500, 400)
         self.setStyleSheet("background-color: #000000;")
         self.setWindowOpacity(0.9)
+
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(10,10,10,10)
+        layout.setSpacing(20)
+
+
+        #setting scroll Area
+        scroll = QScrollArea(self)
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("border:none;")
 
         # Layout setup
         LayoutV = QVBoxLayout()
         LayoutV.setContentsMargins(10, 10, 10, 10)
         LayoutV.setSpacing(20)
+
 
         # Dictionary Label
         Dict = QLabel("Dictionary ───────────────────────────")
@@ -86,7 +98,7 @@ class Popup(QWidget):
         Line.setFrameShape(QFrame.Shape.HLine)
         Line.setStyleSheet("background-color: rgba(255, 255, 255, 0.3);")
         LayoutV.addWidget(Line)
-
+        scroll.setWidget(content)
         self.setLayout(LayoutV)
 
 # Function to display popup (called from main.py)
@@ -94,4 +106,7 @@ def show_popup(word, meaning, example, synonyms):
     app = QApplication(sys.argv)
     popup = Popup(word, meaning, example, synonyms)
     popup.show()
+    popup.activateWindow()
+    popup.raise_()
+
     sys.exit(app.exec())

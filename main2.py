@@ -4,7 +4,7 @@ import time
 import pyperclip
 from pynput import mouse, keyboard
 from db_handler import get_word_meaning
-from popup import show_popup
+from popup1 import show_popup
 
 # Create keyboard controller to simulate Ctrl+C
 kbd = keyboard.Controller()
