@@ -1,5 +1,8 @@
 import sqlite3
 import os
+import sys
+
+
 
 def execute_query(query,params=(),fetch = False):   #function FIRST
     connect = sqlite3.connect('D:\Krishna\Saras\EventListener_SARAS\Dictionary.db')
@@ -15,22 +18,37 @@ def execute_query(query,params=(),fetch = False):   #function FIRST
     connect.close()
 
 
-def get_word_meaning(word):          #Function SECOND
-    query='''
-    SELECT definition, examples, synonm
-    FROM dictionary
-    WHERE word1 = ?
+def get_word_meaning(word: str):
+    if not word or not word.strip():
+        print("[DB] Empty word skipped", flush=True)
+        return None
+
+    # Clean SQL - no # comments inside triple quotes
+    query = '''
+        SELECT definition, examples, synonm
+        FROM Dictionary
+        WHERE word1 = ?
     '''
 
-    result = execute_query(query, (word,),fetch = True)
-
-    if result:
-        definition, examples, synonm = result[0]
-        return{
-            'word':word,
-            'definition':definition,
-            'examples':examples.split(',') if examples else [],
-            'synonyms':synonm.split(',') if synonm else []
-        }
-    else:
+    try:
+        result = execute_query(query, (word.lower(),), fetch=True)
+        
+        if result and len(result) > 0:
+            definition, examples_str, synonyms_str = result[0]
+            
+            examples = examples_str.split(',') if examples_str else []
+            synonyms = synonyms_str.split(',') if synonyms_str else []
+            
+            return {
+                'word': word,
+                'definition': definition or "No definition available",
+                'examples': [ex.strip() for ex in examples if ex.strip()],
+                'synonyms': [syn.strip() for syn in synonyms if syn.strip()]
+            }
+        
+        print(f"[DB] Word '{word}' not found in 'words' table")
+        return None
+    
+    except sqlite3.Error as e:
+        print(f"[DB] Lookup failed for '{word}': {e}", flush=True)
         return None
