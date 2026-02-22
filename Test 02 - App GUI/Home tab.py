@@ -718,7 +718,7 @@ class AboutPage(QWidget):
         mc_lay.addWidget(prompt)
 
         self._msg_box = QTextEdit()
-        self._msg_box.setPlaceholderText("Write your message here…  e.g. 'Hi, I love what you are building'!")
+        self._msg_box.setPlaceholderText("Write your message here…  e.g. 'Hi, I love what you are building!'")
         self._msg_box.setMinimumHeight(100)
         self._msg_box.setMaximumHeight(130)
         self._msg_box.setStyleSheet(f"""
