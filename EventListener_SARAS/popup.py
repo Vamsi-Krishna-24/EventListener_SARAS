@@ -2,106 +2,136 @@ from PyQt6.QtWidgets import (
     QWidget, QLabel, QVBoxLayout, QHBoxLayout, QFrame,
     QSpacerItem, QSizePolicy, QApplication, QScrollArea
 )
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QFont, QFontDatabase
 from PyQt6.QtCore import Qt, QTimer
 import sys
+
+# Color palette — beach & white
+BG_COLOR       = "rgba(255, 251, 245, 0.92)"   # warm off-white, slightly translucent
+BORDER_COLOR   = "rgba(210, 195, 175, 0.6)"     # warm sand border
+TEXT_PRIMARY   = "#1a1410"                       # near-black with warm tint
+TEXT_SECONDARY = "#6b5c4a"                       # muted warm brown
+TEXT_ITALIC    = "#8a7260"                       # softer warm for example
+DIVIDER        = "rgba(180, 160, 130, 0.35)"    # subtle sand line
+HEADER_COLOR   = "#9a7f5e"                       # warm tan for "Dictionary" label
+
 
 class Popup(QWidget):
     def __init__(self, word, meaning, example, synonyms):
         super().__init__()
         self.setWindowTitle("SARAS - Product by ENGIN.E")
         self.setFixedSize(450, 350)
-        self.setStyleSheet("background-color: #000000;")
-        self.setWindowOpacity(0.9)
-        self.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool)
+        self.setWindowOpacity(0.97)
+        self.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
+        # Outer shell with rounded corners + shadow feel
+        self.setStyleSheet(f"""
+            QWidget#shell {{
+                background-color: {BG_COLOR};
+                border: 1px solid {BORDER_COLOR};
+                border-radius: 18px;
+            }}
+            QScrollArea {{
+                border: none;
+                background: transparent;
+            }}
+            QWidget#content {{
+                background: transparent;
+            }}
+        """)
+
+        shell = QWidget(self)
+        shell.setObjectName("shell")
+        shell.setFixedSize(450, 350)
 
         # Scroll Area Setup
-        scroll = QScrollArea(self)
+        scroll = QScrollArea(shell)
         scroll.setWidgetResizable(True)
-        scroll.setStyleSheet("border: none;")  # Optional: cleaner look
+        scroll.setFixedSize(450, 350)
 
         # Inner content widget
         content = QWidget()
+        content.setObjectName("content")
         layout = QVBoxLayout(content)
-        layout.setContentsMargins(10, 10, 10, 10)
-        layout.setSpacing(20)
+        layout.setContentsMargins(28, 24, 28, 24)
+        layout.setSpacing(14)
 
-        # Dictionary Label
-        dict_label = QLabel("Dictionary ───────────────────────────")
-        dict_label.setFont(QFont("Georgia", 16))
-        dict_label.setStyleSheet("color: white;")
+        # Font — DM Sans (clean, humanist, closest free match to Claude's font)
+        FONT_FAMILY = "DM Sans"
+        FONT_FALLBACK = "Helvetica Neue"
+
+        def label_font(size, italic=False, weight=QFont.Weight.Normal):
+            f = QFont(FONT_FAMILY, size)
+            f.setItalic(italic)
+            f.setWeight(weight)
+            f.setStyleHint(QFont.StyleHint.SansSerif)
+            return f
+
+        # "Dictionary" header label
+        dict_label = QLabel("Dictionary")
+        dict_label.setFont(label_font(11, weight=QFont.Weight.Medium))
+        dict_label.setStyleSheet(f"color: {HEADER_COLOR}; letter-spacing: 1.5px; text-transform: uppercase;")
         dict_label.setWordWrap(True)
         layout.addWidget(dict_label)
 
-        # Word with horizontal line
-        layout_word = QHBoxLayout()
-        word_label = QLabel(word)
-        word_label.setFont(QFont("AppleGothic", 18))
-        word_label.setStyleSheet("color: white;")
-        word_label.setWordWrap(True)
-        layout_word.addWidget(word_label)
+        # Thin divider
+        def make_divider():
+            line = QFrame()
+            line.setFrameShape(QFrame.Shape.HLine)
+            line.setFixedHeight(1)
+            line.setStyleSheet(f"background-color: {DIVIDER}; border: none;")
+            return line
 
-        side_line = QFrame()
-        side_line.setFrameShape(QFrame.Shape.HLine)
-        side_line.setFixedHeight(1)
-        side_line.setStyleSheet("background-color: rgba(255, 255, 255, 0.3);")
-        layout_word.addWidget(side_line)
-        layout.addLayout(layout_word)
+        layout.addWidget(make_divider())
+
+        # Word
+        word_label = QLabel(word)
+        word_label.setFont(label_font(22, weight=QFont.Weight.Bold))
+        word_label.setStyleSheet(f"color: {TEXT_PRIMARY};")
+        word_label.setWordWrap(True)
+        layout.addWidget(word_label)
 
         # Meaning
         meaning_label = QLabel(meaning)
-        meaning_label.setFont(QFont("Georgia", 16))
-        meaning_label.setStyleSheet("color: white;")
+        meaning_label.setFont(label_font(14))
+        meaning_label.setStyleSheet(f"color: {TEXT_PRIMARY}; line-height: 1.5;")
         meaning_label.setWordWrap(True)
         layout.addWidget(meaning_label)
 
         # Example
         example_label = QLabel(example)
-        example_label.setFont(QFont("Georgia", 16, -1, italic=True))
-        example_label.setStyleSheet("color: white;")
+        example_label.setFont(label_font(13, italic=True))
+        example_label.setStyleSheet(f"color: {TEXT_ITALIC};")
         example_label.setWordWrap(True)
         layout.addWidget(example_label)
 
         # Spacer
-        layout.addItem(QSpacerItem(20, 20, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed))
+        layout.addItem(QSpacerItem(10, 10, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed))
 
-        # Synonyms with line
-        layout_syn = QHBoxLayout()
+        layout.addWidget(make_divider())
+
+        # "Synonyms" label
         syn_label = QLabel("Synonyms")
-        syn_label.setFont(QFont("AppleGothic", 16))
-        syn_label.setStyleSheet("color: white;")
+        syn_label.setFont(label_font(11, weight=QFont.Weight.Medium))
+        syn_label.setStyleSheet(f"color: {HEADER_COLOR}; letter-spacing: 1.5px;")
         syn_label.setWordWrap(True)
-        layout_syn.addWidget(syn_label)
-
-        side_line2 = QFrame()
-        side_line2.setFrameShape(QFrame.Shape.HLine)
-        side_line2.setFixedHeight(1)
-        side_line2.setStyleSheet("background-color: rgba(255, 255, 255, 0.3);")
-        layout_syn.addWidget(side_line2)
-        layout.addLayout(layout_syn)
+        layout.addWidget(syn_label)
 
         # Synonyms content
         synonyms_label = QLabel(synonyms)
-        synonyms_label.setFont(QFont("Georgia", 16))
-        synonyms_label.setStyleSheet("color: white;")
+        synonyms_label.setFont(label_font(13))
+        synonyms_label.setStyleSheet(f"color: {TEXT_SECONDARY};")
         synonyms_label.setWordWrap(True)
         layout.addWidget(synonyms_label)
 
-        # Bottom Line
-        bottom_line = QFrame()
-        bottom_line.setFrameShape(QFrame.Shape.HLine)
-        bottom_line.setStyleSheet("background-color: rgba(255, 255, 255, 0.3);")
-        layout.addWidget(bottom_line)
+        layout.addStretch()
 
         # Set scroll content
         scroll.setWidget(content)
 
-        # Main layout for window
-        main_layout = QVBoxLayout(self)
-        main_layout.addWidget(scroll)
-        self.setLayout(main_layout)
         QTimer.singleShot(8000, self.close)
+
 
 # Function to show popup (test)
 def show_popup(word, meaning, example, synonyms):
