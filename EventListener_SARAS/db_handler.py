@@ -2,10 +2,12 @@ import sqlite3
 import os
 import sys
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_PATH = os.path.join(BASE_DIR, "Dictionary.db")
 
 
-def execute_query(query,params=(),fetch = False):   #function FIRST
-    connect = sqlite3.connect('D:\Krishna\Saras\EventListener_SARAS\Dictionary.db')
+def execute_query(query,params=(),fetch = False):  
+    connect = sqlite3.connect(DB_PATH)
     cursor = connect.cursor()
     cursor.execute(query,params)
 

@@ -1,0 +1,24 @@
+{
+  "name": "saras-dictionary",
+  "version": "1.0.0",
+  "description": "SARAS — The Windows Dictionary App for Curious Readers",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder"
+  },
+  "author": "SARAS",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.0.0"
+  },
+  "build": {
+    "appId": "com.saras.dictionary",
+    "productName": "SARAS",
+    "win": {
+      "icon": "assets/lotus_coin_v2.ico",
+      "target": "nsis"
+    }
+  }
+}
