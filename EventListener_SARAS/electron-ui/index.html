@@ -694,7 +694,6 @@
 </head>
 <body>
 
-<!-- TITLEBAR -->
 
 
 <!-- APP BODY -->
@@ -850,7 +849,7 @@
             <p class="support-desc">Support and feedback — greetings are welcome any time, 24×7. We are here to help. Reach out to us at any time, and we will get back to you as soon as possible.</p>
             <div class="support-email-display">
               <span>→</span>
-              <span>Support@Saras.com</span>
+              <span><a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="402538212d302c2500252d21292c6e232f2d">[email&#160;protected]</a></span>
             </div>
             <div class="support-action-row">
               <button class="btn-primary" onclick="sendEmail()">Send Email</button>
@@ -893,7 +892,7 @@
               <br><br>
               If you read a lot — papers, articles, books, anything — SARAS will quietly become one of your most-used tools.
             </p>
-            <p class="about-contact">Questions? Write to <a href="#" onclick="sendEmail(); return false;">example@email.com</a></p>
+            <p class="about-contact">Questions? Write to <a href="#" onclick="sendEmail(); return false;"><span class="__cf_email__" data-cfemail="adc8d5ccc0ddc1c8edc8c0ccc4c183cec2c0">[email&#160;protected]</span></a></p>
           </div>
         </div>
 
@@ -915,15 +914,19 @@
 <script>
 const { ipcRenderer, shell } = require('electron');
 
+const API = 'http://127.0.0.1:5000';
 
-// Sidebar toggle
+// ── Window controls ──────────────────────────────────────────
+function win(action) { ipcRenderer.send('window-' + action); }
+
+// ── Sidebar toggle ───────────────────────────────────────────
 let sidebarOpen = true;
 function toggleSidebar() {
   sidebarOpen = !sidebarOpen;
   document.getElementById('sidebar').classList.toggle('collapsed', !sidebarOpen);
 }
 
-// Panel switching
+// ── Panel switching ──────────────────────────────────────────
 function showPanel(name) {
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
@@ -931,19 +934,30 @@ function showPanel(name) {
   document.getElementById('nav-' + name).classList.add('active');
 }
 
-// Trigger selection
+// ── Trigger selection → POST /toggle ────────────────────────
+// Maps UI ids ('dblclick'/'longpress') to backend values
+const TRIGGER_MAP = { dblclick: 'double_click', longpress: 'long_press' };
+const TRIGGER_MAP_REV = { double_click: 'dblclick', long_press: 'longpress' };
+
 let currentTrigger = 'dblclick';
+
 function selectTrigger(t) {
   currentTrigger = t;
   document.querySelectorAll('.trigger-option').forEach(o => o.classList.remove('selected'));
   document.getElementById('trigger-' + t).classList.add('selected');
+  postToggle(); // sync to backend immediately
 }
 
-// Listening toggle
+// ── Listening toggle → POST /toggle ─────────────────────────
 function updateListeningStatus() {
-  const isOn = document.getElementById('listeningToggle').checked;
-  const dot = document.getElementById('statusDot');
+  applyListeningUI(document.getElementById('listeningToggle').checked);
+  postToggle();
+}
+
+function applyListeningUI(isOn) {
+  const dot  = document.getElementById('statusDot');
   const text = document.getElementById('statusText');
+  document.getElementById('listeningToggle').checked = isOn;
   if (isOn) {
     dot.classList.add('on');
     text.textContent = 'SARAS is actively listening for your trigger input.';
@@ -953,24 +967,64 @@ function updateListeningStatus() {
   }
 }
 
-// Dictionary lookup via Free Dictionary API
+async function postToggle() {
+  try {
+    await fetch(`${API}/toggle`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        listening:    document.getElementById('listeningToggle').checked,
+        trigger_mode: TRIGGER_MAP[currentTrigger] || 'double_click'
+      })
+    });
+  } catch (e) {
+    console.warn('[SARAS] /toggle failed:', e.message);
+  }
+}
+
+// ── Poll /status every 2s — keeps UI in sync with tray ───────
+async function pollStatus() {
+  try {
+    const res  = await fetch(`${API}/status`);
+    const data = await res.json();
+
+    // sync toggle
+    applyListeningUI(data.listening);
+
+    // sync trigger selection
+    const uiTrigger = TRIGGER_MAP_REV[data.trigger_mode] || 'dblclick';
+    if (uiTrigger !== currentTrigger) {
+      currentTrigger = uiTrigger;
+      document.querySelectorAll('.trigger-option').forEach(o => o.classList.remove('selected'));
+      document.getElementById('trigger-' + uiTrigger).classList.add('selected');
+    }
+  } catch (e) {
+    // backend not ready yet — silently retry
+  }
+}
+
+setInterval(pollStatus, 2000);
+pollStatus(); // run immediately on load
+
+// ── Dictionary lookup → GET /define (DB first, API fallback) ─
 async function lookupWord() {
   const word = document.getElementById('searchInput').value.trim();
   if (!word) return;
 
-  const empty = document.getElementById('resultEmpty');
+  const empty   = document.getElementById('resultEmpty');
   const loading = document.getElementById('loadingIndicator');
   const content = document.getElementById('resultContent');
 
-  empty.style.display = 'none';
+  empty.style.display   = 'none';
   loading.style.display = 'flex';
   content.style.display = 'none';
 
   try {
-    const res = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(word)}`);
-    if (!res.ok) throw new Error('Word not found');
+    const res  = await fetch(`${API}/define?word=${encodeURIComponent(word)}`);
     const data = await res.json();
-    renderResult(data[0]);
+
+    if (data.error) throw new Error(data.error);
+    renderResult(data);
   } catch (err) {
     content.innerHTML = `<div style="padding:28px;text-align:center;">
       <div style="font-size:1.6rem;opacity:0.2;margin-bottom:10px;">🔍</div>
@@ -985,43 +1039,50 @@ async function lookupWord() {
   }
 }
 
-function renderResult(entry) {
+// Handles both DB response shape and API fallback shape
+function renderResult(data) {
   const content = document.getElementById('resultContent');
-  const phonetic = entry.phonetics?.find(p => p.text)?.text || '';
 
-  let html = `<div class="result-word">${entry.word}</div>`;
-  if (phonetic) html += `<div class="result-phonetic">${phonetic}</div>`;
+  let html = `<div class="result-word">${data.word}</div>`;
+  if (data.phonetic) html += `<div class="result-phonetic">${data.phonetic}</div>`;
+
+  // source badge
+  const badge = data.source === 'db'
+    ? `<span style="font-size:0.7rem;color:var(--gold);letter-spacing:0.08em;">LOCAL DB</span>`
+    : `<span style="font-size:0.7rem;color:var(--faint);letter-spacing:0.08em;">ONLINE</span>`;
+  html += `<div style="margin-bottom:14px;">${badge}</div>`;
+
   html += `<div class="result-meanings">`;
 
-  (entry.meanings || []).forEach(m => {
+  if (data.definition) {
     html += `<div class="meaning-block">
-      <div class="meaning-pos">${m.partOfSpeech}</div>`;
-    (m.definitions || []).slice(0, 3).forEach(d => {
-      html += `<p class="meaning-def">${d.definition}</p>`;
-      if (d.example) html += `<p class="meaning-example">"${d.example}"</p>`;
+      <p class="meaning-def">${data.definition}</p>`;
+    (data.examples || []).forEach(ex => {
+      html += `<p class="meaning-example">"${ex}"</p>`;
     });
     html += `</div>`;
-  });
+  }
+
+  if (data.synonyms && data.synonyms.length) {
+    html += `<div class="meaning-block">
+      <div class="meaning-pos">synonyms</div>
+      <p class="meaning-def">${data.synonyms.join(', ')}</p>
+    </div>`;
+  }
 
   html += `</div>`;
   content.innerHTML = html;
   content.style.display = 'block';
 }
 
-// Support actions
+// ── Support actions ──────────────────────────────────────────
 function sendEmail() {
-  shell.openExternal('mailto:support@Saras.com?subject=SARAS%20Feedback');
+  shell.openExternal('mailto:udhyog@saras.app?subject=SARAS%20Support');
 }
+
 function openForm() {
   shell.openExternal('https://forms.google.com');
 }
-
-// Allow text selection in inputs
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && document.activeElement === document.getElementById('searchInput')) {
-    lookupWord();
-  }
-});
 </script>
 </body>
 </html>
