@@ -1,18 +1,21 @@
 """
-saras_app.py  |  SARAS Backend  |  v0.2
+saras_app.py  |  SARAS Backend  |  v0.3
 ═══════════════════════════════════════════════════════════════
   Runs three things in parallel:
     1. FastAPI server  (localhost:5000)  — talks to Electron UI
     2. ListenerController               — watches for trigger input
     3. SarasTray                        — system tray icon (green/red)
 
-  PyQt6 is kept ONLY for the tray icon and popup windows.
-  All other UI is handled by Electron.
+  PyQt6 is kept ONLY for the tray icon.
+  All UI (including popups) is handled by Electron.
 
-  Endpoints:
+  Endpoints (FastAPI on :5000):
     GET  /status          → { listening, trigger_mode }
     POST /toggle          → { listening, trigger_mode } → saves + applies
     GET  /define?word=x   → DB lookup → fallback to REST API
+
+  Popup trigger (Electron HTTP server on :5001):
+    POST /show-popup      → { word, definition, examples, synonyms }
 ═══════════════════════════════════════════════════════════════
 """
 
@@ -33,12 +36,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from pynput import mouse, keyboard
 
-from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu, QWidget
+from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
 from PyQt6.QtCore import Qt, QTimer, QObject, pyqtSignal, pyqtSlot, QMetaObject, Qt as QtCore
-from PyQt6.QtGui import QFont, QColor, QIcon, QCursor, QPixmap, QPainter, QPen, QAction
+from PyQt6.QtGui import QFont, QColor, QIcon, QPixmap, QPainter, QPen, QAction
 
 from db_handler import get_word_meaning
-from popup import Popup
 from listener1 import ListenerController
 
 print("[SARAS] Imports OK", flush=True)
@@ -142,8 +144,24 @@ controller = None   # ListenerController — assigned in main()
 # ───────────────────────────────────────────────
 # WORD QUEUE + POPUP PROCESSOR
 # ───────────────────────────────────────────────
-word_queue   = queue.Queue()
-active_popups = []
+word_queue = queue.Queue()
+
+ELECTRON_POPUP_URL = "http://127.0.0.1:5001/show-popup"
+
+
+def _post_to_electron(payload: dict):
+    """
+    Fire-and-forget POST to Electron's popup server.
+    Runs in a daemon thread so it never blocks the Qt main thread.
+    Silently ignores connection errors (Electron may not be ready yet).
+    """
+    try:
+        with httpx.Client(timeout=3) as client:
+            r = client.post(ELECTRON_POPUP_URL, json=payload)
+            if r.status_code != 200:
+                print(f"[POPUP] Electron returned {r.status_code}", flush=True)
+    except Exception as e:
+        print(f"[POPUP] Could not reach Electron popup server: {e}", flush=True)
 
 
 def process_queue():
@@ -157,21 +175,26 @@ def process_queue():
         result = get_word_meaning(word)
 
         if result:
-            popup = Popup(
-                word,
-                result.get("definition", ""),
-                ", ".join(result.get("examples", [])),
-                ", ".join(result.get("synonyms", []))
-            )
+            payload = {
+                "word":       result.get("word", word),
+                "definition": result.get("definition", ""),
+                "examples":   result.get("examples", []),
+                "synonyms":   result.get("synonyms", []),
+            }
         else:
-            popup = Popup(word, "Word not found in database.", "", "")
+            payload = {
+                "word":       word,
+                "definition": "Word not found in database.",
+                "examples":   [],
+                "synonyms":   [],
+            }
 
-        popup.show()
-        popup.raise_()
-        popup.activateWindow()
-        active_popups.append(popup)
-        # prune closed popups
-        active_popups[:] = [p for p in active_popups if p.isVisible()]
+        # POST to Electron in a background thread — never blocks Qt
+        threading.Thread(
+            target=_post_to_electron,
+            args=(payload,),
+            daemon=True
+        ).start()
 
 
 # ───────────────────────────────────────────────

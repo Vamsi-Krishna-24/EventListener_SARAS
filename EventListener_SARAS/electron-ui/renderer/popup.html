@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>SARAS</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:          rgba(252, 252, 250, 0.97);
+    --border:      rgba(0,0,0,0.13);
+    --shadow:      0 20px 60px rgba(0,0,0,0.25), 0 2px 8px rgba(0,0,0,0.14);
+    --text-primary:#1a1209;
+    --text-body:   #2d2416;
+    --text-muted:  #7a6a52;
+    --text-italic: #9a8060;
+    --accent:      #1a6fe8;
+    --divider:     rgba(0,0,0,0.09);
+    --highlight:   #ffe135;
+    --row-hover:   rgba(0,0,0,0.04);
+    --pill-bg:     rgba(26,111,232,0.10);
+    --font-ui:     -apple-system, "Helvetica Neue", sans-serif;
+    --font-serif:  "Georgia", serif;
+    --radius:      13px;
+    --tail-size:   10px;
+    --tail-offset: 170px; /* overridden by JS */
+  }
+
+  html, body {
+    width: 340px;
+    background: transparent;
+    font-family: var(--font-ui);
+    -webkit-font-smoothing: antialiased;
+    overflow: visible;
+  }
+
+  /* ── Outer wrapper ── */
+  .popover-wrap {
+    position: relative;
+    width: 340px;
+  }
+
+  /* ── TAIL-UP (default): popup is BELOW the word, tail points UP ── */
+  .popover-wrap.tail-up {
+    padding-top: calc(var(--tail-size) + 2px);
+    padding-bottom: 0;
+  }
+
+  .popover-wrap.tail-up::before,
+  .popover-wrap.tail-up::after {
+    content: '';
+    position: absolute;
+    left: var(--tail-offset);
+    transform: translateX(-50%);
+    width: 0; height: 0;
+    pointer-events: none;
+  }
+
+  .popover-wrap.tail-up::before {
+    top: 0;
+    border-left:   calc(var(--tail-size) + 1px) solid transparent;
+    border-right:  calc(var(--tail-size) + 1px) solid transparent;
+    border-bottom: calc(var(--tail-size) + 1px) solid rgba(0,0,0,0.15);
+  }
+
+  .popover-wrap.tail-up::after {
+    top: 2px;
+    border-left:   var(--tail-size) solid transparent;
+    border-right:  var(--tail-size) solid transparent;
+    border-bottom: var(--tail-size) solid rgba(252,252,250,0.97);
+  }
+
+  /* ── TAIL-DOWN: popup is ABOVE the word, tail points DOWN ── */
+  .popover-wrap.tail-down {
+    padding-bottom: calc(var(--tail-size) + 2px);
+    padding-top: 0;
+  }
+
+  .popover-wrap.tail-down::before,
+  .popover-wrap.tail-down::after {
+    content: '';
+    position: absolute;
+    left: var(--tail-offset);
+    transform: translateX(-50%);
+    width: 0; height: 0;
+    pointer-events: none;
+  }
+
+  .popover-wrap.tail-down::before {
+    bottom: 0;
+    border-left:   calc(var(--tail-size) + 1px) solid transparent;
+    border-right:  calc(var(--tail-size) + 1px) solid transparent;
+    border-top:    calc(var(--tail-size) + 1px) solid rgba(0,0,0,0.15);
+  }
+
+  .popover-wrap.tail-down::after {
+    bottom: 2px;
+    border-left:   var(--tail-size) solid transparent;
+    border-right:  var(--tail-size) solid transparent;
+    border-top:    var(--tail-size) solid rgba(252,252,250,0.97);
+  }
+
+  /* ── Card ── */
+  .popup {
+    width: 340px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    animation: popIn 0.2s cubic-bezier(0.34,1.45,0.64,1) both;
+  }
+
+  @keyframes popIn {
+    from { opacity: 0; transform: scale(0.9) translateY(-4px); }
+    to   { opacity: 1; transform: scale(1)   translateY(0); }
+  }
+
+  /* ── Selected word banner ── */
+  .selected-word-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 14px 8px;
+    border-bottom: 1px solid var(--divider);
+  }
+
+  .selected-word-chip {
+    display: inline-block;
+    background: var(--highlight);
+    color: #1a0f00;
+    font-weight: 600;
+    font-size: 13px;
+    padding: 1px 6px 2px;
+    border-radius: 4px;
+  }
+
+  .selected-word-label { font-size: 11.5px; color: var(--text-muted); }
+
+  /* ── Windows-style close button ── */
+  .close-btn {
+    margin-left: auto;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: 11px;
+    flex-shrink: 0;
+    transition: background 0.1s, color 0.1s;
+    user-select: none;
+  }
+
+  .close-btn:hover {
+    background: #c42b1c;
+    color: #ffffff;
+  }
+
+  .close-btn svg {
+    width: 10px;
+    height: 10px;
+  }
+
+  /* ── Scrollable body ── */
+  .popup-body {
+    max-height: 320px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(0,0,0,0.15) transparent;
+  }
+
+  .popup-body::-webkit-scrollbar { width: 5px; }
+  .popup-body::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); border-radius: 99px; }
+
+  /* ── Panels ── */
+  .panel { display: none; flex-direction: column; }
+  .panel.active { display: flex; }
+
+  .section-header { padding: 9px 14px 4px; font-size: 12px; font-weight: 600; color: var(--text-primary); }
+
+  /* ── Dict entry ── */
+  .dict-block { padding: 4px 14px 2px 20px; }
+
+  .dict-word {
+    font-family: var(--font-serif);
+    font-size: 15px; font-weight: 600; color: var(--text-primary);
+    display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap;
+  }
+
+  .dict-phonetic { font-family: var(--font-ui); font-size: 12px; font-weight: 400; color: var(--text-muted); }
+  .dict-pos      { font-size: 11.5px; color: var(--text-muted); font-style: italic; }
+
+  .dict-number {
+    font-size: 12px; color: var(--text-muted); font-weight: 500;
+    margin-top: 5px; display: flex; gap: 5px; align-items: flex-start; line-height: 1.5;
+  }
+
+  .dict-meaning { font-size: 13px; color: var(--text-body); line-height: 1.55; flex: 1; }
+  .dict-meaning em { font-style: italic; color: var(--text-italic); }
+
+  /* ── Synonyms ── */
+  .synonyms-row {
+    padding: 6px 14px 10px 20px;
+    display: flex; align-items: flex-start; gap: 6px; flex-wrap: wrap;
+  }
+
+  .synonyms-label {
+    font-size: 11px; font-weight: 600; color: var(--text-muted);
+    letter-spacing: 0.05em; text-transform: uppercase; padding-top: 2px;
+  }
+
+  .synonym-pill {
+    font-size: 12px; color: var(--accent); background: var(--pill-bg);
+    border-radius: 20px; padding: 1px 8px 2px; cursor: pointer; transition: background 0.12s;
+  }
+
+  .synonym-pill:hover { background: rgba(26,111,232,0.18); }
+
+  .divider { height: 1px; background: var(--divider); margin: 2px 0; }
+
+  /* ── Action row ── */
+  .action-row {
+    display: flex; align-items: center; padding: 9px 14px; gap: 10px;
+    cursor: pointer; transition: background 0.1s; user-select: none;
+  }
+
+  .action-row:hover { background: var(--row-hover); }
+
+  .action-icon {
+    width: 28px; height: 28px; border-radius: 7px;
+    background: linear-gradient(145deg, #3a7bd5, #1a5cc8);
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; box-shadow: 0 1px 3px rgba(0,0,0,0.18);
+  }
+
+  .action-icon svg { width: 15px; height: 15px; }
+  .action-text { font-size: 13px; font-weight: 500; color: var(--text-primary); flex: 1; }
+  .action-chevron { color: var(--text-muted); font-size: 15px; opacity: 0.5; }
+
+  /* ── Wikipedia ── */
+  .wiki-title { font-family: var(--font-serif); font-size: 16px; font-weight: 600; color: var(--text-primary); padding: 8px 14px 4px; }
+  .wiki-body  { font-size: 12.5px; color: var(--text-body); line-height: 1.6; padding: 0 14px 6px; }
+  .wiki-more  { color: var(--accent); font-size: 12px; cursor: pointer; padding: 4px 14px 12px; display: block; }
+
+  /* ── Tab bar ── */
+  .tab-bar {
+    display: flex; align-items: center;
+    border-top: 1px solid var(--divider);
+    background: rgba(245,242,236,0.7);
+    padding: 0 8px; height: 38px; gap: 2px;
+  }
+
+  .tab-arrow {
+    width: 22px; height: 22px; display: flex; align-items: center; justify-content: center;
+    color: var(--text-muted); cursor: pointer; border-radius: 5px; font-size: 15px; opacity: 0.5;
+  }
+
+  .tabs { display: flex; flex: 1; justify-content: center; gap: 4px; }
+
+  .tab {
+    font-size: 12px; font-weight: 500; color: var(--text-muted);
+    padding: 4px 12px; border-radius: 7px; cursor: pointer;
+    transition: all 0.15s; user-select: none;
+  }
+
+  .tab.active { background: #1a6fe8; color: #fff; box-shadow: 0 1px 4px rgba(26,111,232,0.3); }
+  .tab:not(.active):hover { background: rgba(0,0,0,0.06); color: var(--text-primary); }
+</style>
+</head>
+<body>
+
+<div class="popover-wrap tail-up" id="popover-wrap">
+  <div class="popup">
+
+    <div class="selected-word-row">
+      <span class="selected-word-chip" id="chip-word">…</span>
+      <span class="selected-word-label">— selected word</span>
+      <div class="close-btn" onclick="window.sarasAPI ? window.sarasAPI.closePopup() : window.close()" title="Close">
+        <svg viewBox="0 0 10 10" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M1 1L9 9M9 1L1 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+      </div>
+    </div>
+
+    <div class="popup-body">
+
+      <!-- SARAS panel -->
+      <div class="panel active" id="panel-saras">
+        <div class="section-header">Saras</div>
+        <div class="dict-block">
+          <div class="dict-word">
+            <span id="dict-word">…</span>
+            <span class="dict-phonetic" id="dict-phonetic"></span>
+            <span class="dict-pos" id="dict-pos"></span>
+          </div>
+          <div class="dict-number">
+            <span>1</span>
+            <span class="dict-meaning" id="dict-meaning"></span>
+          </div>
+          <div class="dict-number" id="dict-example-row">
+            <span>&nbsp;</span>
+            <span class="dict-meaning"><em id="dict-example"></em></span>
+          </div>
+        </div>
+
+        <div class="synonyms-row" id="synonyms-row">
+          <span class="synonyms-label">Synonyms</span>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="action-row" id="open-in-saras-btn">
+          <div class="action-icon">
+            <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M4 3.5C4 2.67 4.67 2 5.5 2H16v13H5.5A1.5 1.5 0 0 0 4 16.5V3.5Z" stroke="white" stroke-width="1.4"/>
+              <path d="M4 16.5A1.5 1.5 0 0 0 5.5 18H16v-2H5.5A1.5 1.5 0 0 0 4 16.5Z" stroke="white" stroke-width="1.4"/>
+              <path d="M8 6h5M8 9h5M8 12h3" stroke="white" stroke-width="1.2" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <span class="action-text">Open in Saras</span>
+          <span class="action-chevron">›</span>
+        </div>
+
+        <div class="divider"></div>
+      </div>
+
+      <!-- Wikipedia panel -->
+      <div class="panel" id="panel-wiki">
+        <div class="section-header">Wikipedia</div>
+        <div class="wiki-title" id="wiki-title">…</div>
+        <div class="wiki-body" id="wiki-body">Loading…</div>
+        <a class="wiki-more" id="wiki-more" href="#">Read full article on Wikipedia ›</a>
+      </div>
+
+    </div>
+
+    <div class="tab-bar">
+      <div class="tab-arrow">‹</div>
+      <div class="tabs">
+        <div class="tab active" id="tab-saras" onclick="switchTab('saras')">Saras</div>
+        <div class="tab"        id="tab-wiki"  onclick="switchTab('wiki')">Wikipedia</div>
+      </div>
+      <div class="tab-arrow">›</div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  // ── Populate all UI from data object ─────────────────────────────────────
+  function populate(data) {
+    document.getElementById('chip-word').textContent     = data.word         || '';
+    document.getElementById('dict-word').textContent     = data.word         || '';
+    document.getElementById('dict-phonetic').textContent = data.phonetic     || '';
+    document.getElementById('dict-pos').textContent      = data.pos          || '';
+    document.getElementById('dict-meaning').textContent  = data.meaning      || '';
+    document.getElementById('dict-example').textContent  = data.example      || '';
+    document.getElementById('wiki-title').textContent    = data.word         || '';
+    document.getElementById('wiki-body').textContent     = data.wikiSummary  || 'No Wikipedia summary available.';
+
+    if (data.wikiUrl) document.getElementById('wiki-more').href = data.wikiUrl;
+
+    document.getElementById('dict-example-row').style.display =
+      data.example ? 'flex' : 'none';
+
+    // Synonym pills
+    const row = document.getElementById('synonyms-row');
+    row.querySelectorAll('.synonym-pill').forEach(el => el.remove());
+    (data.synonyms || []).forEach(syn => {
+      const pill = document.createElement('span');
+      pill.className = 'synonym-pill';
+      pill.textContent = syn;
+      row.appendChild(pill);
+    });
+    row.style.display = (data.synonyms && data.synonyms.length) ? 'flex' : 'none';
+
+    // Position the tail under the tapped word
+    setTail(data.tailX, data.tailDir);
+  }
+
+  // ── Tail positioning ──────────────────────────────────────────────────────
+  // tailX    = horizontal centre of word relative to popup window's left edge
+  // tailDir  = 'up' (popup below word) | 'down' (popup above word)
+  function setTail(tailX, tailDir) {
+    const CLAMP_LO = 24;
+    const CLAMP_HI = 316;
+    const x = Math.min(Math.max(tailX ?? 170, CLAMP_LO), CLAMP_HI);
+    const wrap = document.getElementById('popover-wrap');
+    wrap.style.setProperty('--tail-offset', x + 'px');
+    wrap.classList.toggle('tail-up',   tailDir !== 'down');
+    wrap.classList.toggle('tail-down', tailDir === 'down');
+  }
+
+  // ── Tab switching ─────────────────────────────────────────────────────────
+  function switchTab(tab) {
+    document.getElementById('panel-saras').classList.toggle('active', tab === 'saras');
+    document.getElementById('panel-wiki').classList.toggle('active',  tab === 'wiki');
+    document.getElementById('tab-saras').classList.toggle('active',   tab === 'saras');
+    document.getElementById('tab-wiki').classList.toggle('active',    tab === 'wiki');
+  }
+
+  // ── Electron IPC ──────────────────────────────────────────────────────────
+  if (window.sarasAPI) {
+    window.sarasAPI.onWordData((data) => populate(data));
+  }
+
+  document.getElementById('open-in-saras-btn').addEventListener('click', () => {
+    const word = document.getElementById('chip-word').textContent;
+    if (window.sarasAPI) window.sarasAPI.openInSaras(word);
+  });
+
+  // ── DEV PREVIEW — remove in production ───────────────────────────────────
+  populate({
+    word:        "ephemeral",
+    phonetic:    "| ɪˈfem(ə)r(ə)l |",
+    pos:         "adjective",
+    meaning:     "Lasting for a very short time; transitory.",
+    example:     '"the ephemeral pleasures of youth"',
+    synonyms:    ["transient", "fleeting", "brief", "momentary", "short-lived"],
+    wikiSummary: "Ephemeral refers to things that are transitory and short-lived. In ecology, ephemeral plants complete their life cycle in a brief period. In computing, ephemeral storage exists only temporarily.",
+    wikiUrl:     "https://en.wikipedia.org/wiki/Ephemeral",
+    tailX:       90,
+    tailDir:     'up'   // 'up' = popup below word | 'down' = popup above word
+  });
+</script>
+</body>
+</html>
