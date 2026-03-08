@@ -3,3 +3,13 @@ dist/
 build/
 __pycache__/
 *.pyc
+electron-ui/dist/
+electron-ui/node_modules/
+*.exe
+*.dll
+*.pak
+*.bin
+*.asar
+electron-ui/dist/
+
+electron-ui/node_modules/
