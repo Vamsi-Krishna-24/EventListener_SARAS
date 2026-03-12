@@ -261,6 +261,13 @@ class SarasTray(QSystemTrayIcon):
     def _quit(self):
         if controller:
             controller.stop()
+        # Tell Electron to shut down cleanly — it will also kill this process
+        try:
+            import httpx
+            with httpx.Client(timeout=2) as c:
+                c.post("http://127.0.0.1:5001/quit")
+        except Exception:
+            pass  # if Electron is already gone, just quit directly
         QApplication.instance().quit()
 
 

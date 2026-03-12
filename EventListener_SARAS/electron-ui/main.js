@@ -24,7 +24,10 @@ function startPythonBackend() {
   } else {
     const scriptPath = path.join(__dirname, '..', 'saras_app.py');
     const pythonBin  = process.platform === 'win32' ? 'python' : 'python3';
-    proc = spawn(pythonBin, [scriptPath], { detached: false });
+    proc = spawn(pythonBin, [scriptPath], {
+      detached: false,
+      env: { ...process.env, PYTHONIOENCODING: 'utf-8' }
+    });
   }
 
   proc.stdout.on('data', d => console.log('[Python]', d.toString().trim()));
@@ -60,6 +63,7 @@ function createWindow() {
     frame: true,
     titleBarStyle: 'default',
     backgroundColor: '#F7F6F3',
+    skipTaskbar: true,   // ← hide from alt+tab and taskbar
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false
@@ -73,6 +77,14 @@ function createWindow() {
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
     return { action: 'deny' };
+  });
+
+  // ← Hide instead of close — keeps backend alive
+  mainWindow.on('close', (e) => {
+    if (!app.isQuitting) {
+      e.preventDefault();
+      mainWindow.hide();
+    }
   });
 
   mainWindow.on('closed', () => { mainWindow = null; });
@@ -198,6 +210,14 @@ function startPopupServer() {
       return;
     }
 
+    // Python tray "Quit" calls this → cleanly shuts down everything
+    if (req.method === 'POST' && req.url === '/quit') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true }));
+      quitApp();
+      return;
+    }
+
     res.writeHead(404); res.end();
   });
 
@@ -207,24 +227,70 @@ function startPopupServer() {
 }
 
 // ───────────────────────────────────────────────
+// TRAY + QUIT
+// ───────────────────────────────────────────────
+let tray = null;
+
+function createTray() {
+  const { Tray, nativeImage } = require('electron');
+  const iconPath = path.join(__dirname, 'assets', 'lotus_coin_v2.ico');
+  tray = new Tray(iconPath);
+  tray.setToolTip('SARAS — Running');
+
+  const contextMenu = Menu.buildFromTemplate([
+    {
+      label: 'Open SARAS',
+      click: () => {
+        if (!mainWindow) createWindow();
+        mainWindow.show();
+        mainWindow.focus();
+      }
+    },
+    { type: 'separator' },
+    {
+      label: 'Quit SARAS',
+      click: () => quitApp()
+    }
+  ]);
+
+  tray.setContextMenu(contextMenu);
+
+  // Single click also opens the window
+  tray.on('click', () => {
+    if (!mainWindow) createWindow();
+    mainWindow.show();
+    mainWindow.focus();
+  });
+}
+
+function quitApp() {
+  app.isQuitting = true;
+  stopPythonBackend();
+  if (tray) { tray.destroy(); tray = null; }
+  if (popupServer) popupServer.close();
+  app.quit();
+}
+
+// ───────────────────────────────────────────────
 // APP LIFECYCLE
 // ───────────────────────────────────────────────
 app.whenReady().then(() => {
   createWindow();
+  createTray();
   startPopupServer();
-  startPythonBackend();  // ← auto-launch saras_app.py
+  startPythonBackend();
 });
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
-});
+// Don't quit when all windows are closed — tray keeps it alive
+app.on('window-all-closed', () => { /* do nothing */ });
 
 app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  if (!mainWindow) createWindow();
+  mainWindow.show();
 });
 
 app.on('before-quit', () => {
-  stopPythonBackend();  // ← kill saras_app.py cleanly
+  stopPythonBackend();
   if (popupServer) popupServer.close();
 });
 
@@ -240,7 +306,7 @@ ipcMain.on('window-maximize', () => {
   }
 });
 
-ipcMain.on('window-close', () => { if (mainWindow) mainWindow.close(); });
+ipcMain.on('window-close', () => { if (mainWindow) mainWindow.hide(); });
 
 ipcMain.on('open-external', (event, url) => { shell.openExternal(url); });
 
