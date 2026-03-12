@@ -1,49 +1,11 @@
 const { app, BrowserWindow, ipcMain, shell, Menu, screen } = require('electron');
 const path = require('path');
 const http = require('http');
-const { spawn } = require('child_process');
 
 let mainWindow;
 let popupServer;
 let popupWin = null;
 let lastPopupTime = 0;  // debounce rapid double-taps
-let pythonProcess = null;
-
-// ───────────────────────────────────────────────
-// PYTHON BACKEND
-// ───────────────────────────────────────────────
-function startPythonBackend() {
-  if (pythonProcess) return; // already running
-
-  // When packaged: run compiled saras_app.exe bundled in resources.
-  // When in dev:   run saras_app.py directly with python.
-  let proc;
-  if (app.isPackaged) {
-    const exePath = path.join(process.resourcesPath, 'saras_app', 'saras_app.exe');
-    proc = spawn(exePath, [], { detached: false });
-  } else {
-    const scriptPath = path.join(__dirname, '..', 'saras_app.py');
-    const pythonBin  = process.platform === 'win32' ? 'python' : 'python3';
-    proc = spawn(pythonBin, [scriptPath], { detached: false });
-  }
-
-  proc.stdout.on('data', d => console.log('[Python]', d.toString().trim()));
-  proc.stderr.on('data', d => console.error('[Python ERR]', d.toString().trim()));
-  proc.on('close', code => {
-    console.log(`[Python] exited with code ${code}`);
-    pythonProcess = null;
-  });
-
-  pythonProcess = proc;
-  console.log('[SARAS] Python backend spawned');
-}
-
-function stopPythonBackend() {
-  if (pythonProcess) {
-    pythonProcess.kill();
-    pythonProcess = null;
-  }
-}
 
 const POPUP_W = 340;
 const POPUP_H = 430;
@@ -212,7 +174,6 @@ function startPopupServer() {
 app.whenReady().then(() => {
   createWindow();
   startPopupServer();
-  startPythonBackend();  // ← auto-launch saras_app.py
 });
 
 app.on('window-all-closed', () => {
@@ -224,7 +185,6 @@ app.on('activate', () => {
 });
 
 app.on('before-quit', () => {
-  stopPythonBackend();  // ← kill saras_app.py cleanly
   if (popupServer) popupServer.close();
 });
 
@@ -255,3 +215,6 @@ ipcMain.on('open-in-saras', (_e, word) => {
   if (mainWindow) mainWindow.focus();
   // TODO: navigate mainWindow to full definition for `word`
 });
+
+
+// This is a working version !
