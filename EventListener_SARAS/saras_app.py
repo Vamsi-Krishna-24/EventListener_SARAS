@@ -164,37 +164,162 @@ def _post_to_electron(payload: dict):
         print(f"[POPUP] Could not reach Electron popup server: {e}", flush=True)
 
 
+# ── Dedup guard ─────────────────────────────────────────────────────────────
+_last_popup_word: str  = ""
+_last_popup_time: float = 0.0
+POPUP_COOLDOWN_S: float = 10.0
+
+
+def _fetch_wiki(word: str) -> tuple[str, str]:
+    """
+    Search Wikipedia for `word` and return (summary, page_url).
+    Uses opensearch first to avoid disambiguation pages, then fetches
+    the full summary for the best matching article title.
+    Returns ("", "") if nothing useful is found.
+    """
+    try:
+        # Step 1 — opensearch: find the best article title for this word
+        search_r = httpx.get(
+            "https://en.wikipedia.org/w/api.php",
+            params={"action": "opensearch", "search": word, "limit": 3, "format": "json"},
+            timeout=5,
+        )
+        best_title = None
+        if search_r.status_code == 200:
+            results = search_r.json()
+            titles  = results[1] if len(results) > 1 else []
+            for title in titles:
+                if "(disambiguation)" not in title.lower():
+                    best_title = title
+                    break
+
+        if not best_title:
+            return ("", "")
+
+        # Step 2 — fetch the summary for that specific article
+        sum_r = httpx.get(
+            f"https://en.wikipedia.org/api/rest_v1/page/summary/{best_title.replace(' ', '_')}",
+            timeout=5,
+            headers={"Accept": "application/json"},
+        )
+        if sum_r.status_code == 200:
+            wdata   = sum_r.json()
+            extract = wdata.get("extract", "")
+            if extract and wdata.get("type") != "disambiguation":
+                sentences = extract.split(". ")
+                summary   = ". ".join(sentences[:2]).strip()
+                if not summary.endswith("."):
+                    summary += "."
+                url = wdata.get("content_urls", {}).get("desktop", {}).get("page", "")
+                return (summary, url)
+
+    except Exception as e:
+        print(f"[WIKI] fetch failed for '{word}': {e}", flush=True)
+
+    return ("", "")
+
+
+ELECTRON_WIKI_URL = "http://127.0.0.1:5001/update-wiki"
+
+
+def _post_wiki_update(word: str, wiki_summary: str, wiki_url: str):
+    """Send a second POST to Electron with just the Wikipedia data."""
+    try:
+        with httpx.Client(timeout=3) as client:
+            client.post(ELECTRON_WIKI_URL, json={
+                "word":        word,
+                "wikiSummary": wiki_summary,
+                "wikiUrl":     wiki_url,
+            })
+    except Exception as e:
+        print(f"[WIKI] update post failed: {e}", flush=True)
+
+
+def _build_and_post(word: str, result: dict | None):
+    """
+    Called in a background thread.
+    Step 1: POST dictionary data immediately so popup appears fast.
+    Step 2: Fetch Wikipedia, then POST a wiki-update so the tab fills in.
+    """
+    definition = ""
+    examples: list = []
+    synonyms: list = []
+
+    if result:
+        # ── Local DB hit ─────────────────────────
+        definition = result.get("definition", "")
+        examples   = result.get("examples",   [])
+        synonyms   = result.get("synonyms",   [])
+    else:
+        # ── DB miss → try dictionaryapi.dev ──────
+        try:
+            r = httpx.get(
+                f"https://api.dictionaryapi.dev/api/v2/entries/en/{word}",
+                timeout=5,
+            )
+            if r.status_code == 200:
+                data = r.json()[0]
+                for m in data.get("meanings", []):
+                    for d in m.get("definitions", []):
+                        if not definition:
+                            definition = d.get("definition", "")
+                        if d.get("example"):
+                            examples.append(d["example"])
+                    synonyms.extend(m.get("synonyms", []))
+                examples = examples[:3]
+                synonyms = synonyms[:5]
+        except Exception as e:
+            print(f"[DICT] dictionaryapi.dev failed for '{word}': {e}", flush=True)
+
+    # ── Step 1: POST dict data immediately — popup appears right away ──
+    display_word = result.get("word", word) if result else word
+    _post_to_electron({
+        "word":        display_word,
+        "definition":  definition or "No definition found.",
+        "examples":    examples,
+        "synonyms":    synonyms,
+        "wikiSummary": "",   # will be filled by step 2
+        "wikiUrl":     "",
+    })
+
+    # ── Step 2: fetch Wikipedia and push update to the already-open popup ──
+    wiki_summary, wiki_url = _fetch_wiki(word)
+    if wiki_summary:
+        _post_wiki_update(display_word, wiki_summary, wiki_url)
+
+
 def process_queue():
     """Called every 100 ms by QTimer on the Qt main thread."""
+    global _last_popup_word, _last_popup_time
+
+    # Drain the whole queue, act only on the latest word
+    words = []
     while not word_queue.empty():
         try:
-            word = word_queue.get_nowait()
+            words.append(word_queue.get_nowait())
         except queue.Empty:
             break
 
-        result = get_word_meaning(word)
+    if not words:
+        return
 
-        if result:
-            payload = {
-                "word":       result.get("word", word),
-                "definition": result.get("definition", ""),
-                "examples":   result.get("examples", []),
-                "synonyms":   result.get("synonyms", []),
-            }
-        else:
-            payload = {
-                "word":       word,
-                "definition": "Word not found in database.",
-                "examples":   [],
-                "synonyms":   [],
-            }
+    word = words[-1].strip().lower()
 
-        # POST to Electron in a background thread — never blocks Qt
-        threading.Thread(
-            target=_post_to_electron,
-            args=(payload,),
-            daemon=True
-        ).start()
+    # Cooldown: skip if the same word fired recently
+    now = time.monotonic()
+    if word == _last_popup_word and (now - _last_popup_time) < POPUP_COOLDOWN_S:
+        return
+    _last_popup_word = word
+    _last_popup_time = now
+
+    result = get_word_meaning(word)
+
+    # All network calls in a background thread — never block Qt
+    threading.Thread(
+        target=_build_and_post,
+        args=(word, result),
+        daemon=True,
+    ).start()
 
 
 # ───────────────────────────────────────────────

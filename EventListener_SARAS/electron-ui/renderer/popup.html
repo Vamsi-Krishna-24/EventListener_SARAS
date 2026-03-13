@@ -410,26 +410,24 @@
   // ── Electron IPC ──────────────────────────────────────────────────────────
   if (window.sarasAPI) {
     window.sarasAPI.onWordData((data) => populate(data));
+
+    // Wikipedia data arrives a moment later — update just that section
+    window.sarasAPI.onWikiUpdate((data) => {
+      document.getElementById('wiki-body').textContent =
+        data.wikiSummary || 'No Wikipedia summary available.';
+      if (data.wikiUrl) {
+        const link = document.getElementById('wiki-more');
+        link.href = data.wikiUrl;
+        link.style.display = 'block';
+      }
+    });
   }
 
   document.getElementById('open-in-saras-btn').addEventListener('click', () => {
     const word = document.getElementById('chip-word').textContent;
     if (window.sarasAPI) window.sarasAPI.openInSaras(word);
   });
-
-  // ── DEV PREVIEW — remove in production ───────────────────────────────────
-  populate({
-    word:        "ephemeral",
-    phonetic:    "| ɪˈfem(ə)r(ə)l |",
-    pos:         "adjective",
-    meaning:     "Lasting for a very short time; transitory.",
-    example:     '"the ephemeral pleasures of youth"',
-    synonyms:    ["transient", "fleeting", "brief", "momentary", "short-lived"],
-    wikiSummary: "Ephemeral refers to things that are transitory and short-lived. In ecology, ephemeral plants complete their life cycle in a brief period. In computing, ephemeral storage exists only temporarily.",
-    wikiUrl:     "https://en.wikipedia.org/wiki/Ephemeral",
-    tailX:       90,
-    tailDir:     'up'   // 'up' = popup below word | 'down' = popup above word
-  });
+  
 </script>
 </body>
 </html>

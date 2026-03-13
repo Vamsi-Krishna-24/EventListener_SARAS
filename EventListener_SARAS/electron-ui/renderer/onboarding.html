@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SARAS · Welcome</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&family=Outfit:wght@200;300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --white: #FFFFFF;
+    --off:   #F7F6F3;
+    --line:  #E5E3DC;
+    --ink:   #0D0D0B;
+    --mid:   #6A6A64;
+    --faint: #B5B5AD;
+    --gold:  #C4A055;
+    --gold-dim: rgba(196,160,85,0.12);
+    --gold-glow: rgba(196,160,85,0.35);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Outfit', sans-serif;
+    background: var(--ink);
+    color: var(--white);
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    user-select: none;
+  }
+
+  /* ── TITLEBAR ── */
+  .titlebar {
+    height: 32px;
+    background: rgba(0,0,0,0.5);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 0 0 14px;
+    -webkit-app-region: drag;
+    flex-shrink: 0;
+    border-bottom: 1px solid rgba(229,227,220,0.05);
+  }
+  .titlebar-brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .titlebar-name {
+    font-family: 'Playfair Display', serif;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.25em;
+    color: rgba(181,181,173,0.4);
+    text-transform: uppercase;
+  }
+  /* Windows-style controls — right side */
+  .titlebar-controls {
+    display: flex;
+    -webkit-app-region: no-drag;
+    height: 32px;
+  }
+  .win-btn {
+    width: 46px;
+    height: 32px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.12s;
+    color: rgba(181,181,173,0.55);
+  }
+  .win-btn:hover { background: rgba(255,255,255,0.08); color: var(--white); }
+  .win-btn.win-close:hover { background: #C42B1C; color: var(--white); }
+  .win-btn svg { width: 10px; height: 10px; stroke-width: 1.5; }
+
+  /* ── MAIN STAGE ── */
+  .stage {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* Subtle radial glow behind content */
+  .stage::before {
+    content: '';
+    position: absolute;
+    width: 520px;
+    height: 520px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(196,160,85,0.07) 0%, transparent 70%);
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+  }
+
+  /* Fine grain texture overlay */
+  .stage::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+    pointer-events: none;
+    opacity: 0.4;
+  }
+
+  /* ── CARD ── */
+  .card {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    max-width: 420px;
+    padding: 0 32px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    animation: fadeUp 0.7s cubic-bezier(0.22,1,0.36,1) both;
+  }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(18px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Decorative thin line top */
+  .card-rule {
+    width: 1px;
+    height: 40px;
+    background: linear-gradient(to bottom, transparent, var(--gold));
+    margin-bottom: 24px;
+    opacity: 0;
+    animation: fadeUp 0.6s 0.1s cubic-bezier(0.22,1,0.36,1) forwards;
+  }
+
+  /* Logo image */
+  .logo-mark {
+    margin-bottom: 28px;
+    opacity: 0;
+    animation: fadeUp 0.6s 0.2s cubic-bezier(0.22,1,0.36,1) forwards;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .logo-img {
+    width: 40px;
+    height: 40px;
+    object-fit: contain;
+    filter: drop-shadow(0 0 8px rgba(196,160,85,0.5));
+  }
+
+  /* Headline */
+  .headline {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.55rem;
+    font-weight: 400;
+    line-height: 1.45;
+    text-align: center;
+    color: var(--white);
+    margin-bottom: 10px;
+    opacity: 0;
+    animation: fadeUp 0.6s 0.3s cubic-bezier(0.22,1,0.36,1) forwards;
+  }
+  .headline em {
+    font-style: italic;
+    color: var(--gold);
+  }
+
+  /* Sub copy */
+  .sub {
+    font-size: 0.8rem;
+    font-weight: 300;
+    color: var(--faint);
+    text-align: center;
+    letter-spacing: 0.04em;
+    margin-bottom: 40px;
+    opacity: 0;
+    animation: fadeUp 0.6s 0.4s cubic-bezier(0.22,1,0.36,1) forwards;
+  }
+
+  /* Input group */
+  .input-group {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    opacity: 0;
+    animation: fadeUp 0.6s 0.5s cubic-bezier(0.22,1,0.36,1) forwards;
+  }
+
+  .input-label {
+    font-size: 0.7rem;
+    font-weight: 400;
+    letter-spacing: 0.18em;
+    color: var(--faint);
+    text-transform: uppercase;
+  }
+
+  .input-wrap {
+    position: relative;
+  }
+
+  .license-input {
+    width: 100%;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(229,227,220,0.14);
+    border-radius: 4px;
+    padding: 14px 16px;
+    font-family: 'Outfit', sans-serif;
+    font-size: 0.88rem;
+    font-weight: 300;
+    letter-spacing: 0.1em;
+    color: var(--white);
+    outline: none;
+    transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
+    caret-color: var(--gold);
+  }
+  .license-input::placeholder {
+    color: rgba(181,181,173,0.35);
+    letter-spacing: 0.2em;
+    font-size: 0.82rem;
+  }
+  .license-input:focus {
+    border-color: rgba(196,160,85,0.5);
+    background: rgba(196,160,85,0.04);
+    box-shadow: 0 0 0 3px rgba(196,160,85,0.08);
+  }
+
+  /* CTA button */
+  .cta-btn {
+    width: 100%;
+    margin-top: 4px;
+    padding: 14px;
+    background: var(--gold);
+    border: none;
+    border-radius: 4px;
+    font-family: 'Outfit', sans-serif;
+    font-size: 0.78rem;
+    font-weight: 500;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--ink);
+    cursor: pointer;
+    transition: opacity 0.15s, transform 0.15s, box-shadow 0.2s;
+    -webkit-app-region: no-drag;
+  }
+  .cta-btn:hover {
+    opacity: 0.88;
+    transform: translateY(-1px);
+    box-shadow: 0 6px 24px rgba(196,160,85,0.25);
+  }
+  .cta-btn:active {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  .cta-btn:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+  }
+
+  /* Error / hint */
+  .hint {
+    font-size: 0.72rem;
+    font-weight: 300;
+    color: var(--faint);
+    letter-spacing: 0.04em;
+    text-align: center;
+    min-height: 18px;
+    transition: color 0.2s;
+  }
+  .hint.error { color: #FF7A6B; }
+  .hint.success { color: var(--gold); }
+
+  /* Bottom rule */
+  .bottom-rule {
+    width: 1px;
+    height: 32px;
+    background: linear-gradient(to bottom, var(--gold), transparent);
+    margin-top: 28px;
+    opacity: 0;
+    animation: fadeUp 0.6s 0.6s cubic-bezier(0.22,1,0.36,1) forwards;
+  }
+
+  /* Footer note */
+  .footer-note {
+    position: absolute;
+    bottom: 18px;
+    font-size: 0.68rem;
+    font-weight: 300;
+    color: rgba(181,181,173,0.3);
+    letter-spacing: 0.08em;
+  }
+</style>
+</head>
+<body>
+
+  <!-- Titlebar -->
+  <div class="titlebar">
+    <div class="titlebar-brand">
+      <span class="titlebar-name">SARAS</span>
+    </div>
+    <div class="titlebar-controls">
+      <!-- Minimize -->
+      <button class="win-btn win-min" onclick="win('minimize')" title="Minimize">
+        <svg viewBox="0 0 10 10" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <line x1="0" y1="5" x2="10" y2="5" stroke="currentColor" stroke-width="1.2"/>
+        </svg>
+      </button>
+      <!-- Maximize -->
+      <button class="win-btn win-max" onclick="win('maximize')" title="Maximize">
+        <svg viewBox="0 0 10 10" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect x="0.6" y="0.6" width="8.8" height="8.8" stroke="currentColor" stroke-width="1.2" fill="none"/>
+        </svg>
+      </button>
+      <!-- Close -->
+      <button class="win-btn win-close" onclick="win('close')" title="Close">
+        <svg viewBox="0 0 10 10" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <line x1="0.5" y1="0.5" x2="9.5" y2="9.5" stroke="currentColor" stroke-width="1.2"/>
+          <line x1="9.5" y1="0.5" x2="0.5" y2="9.5" stroke="currentColor" stroke-width="1.2"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- Stage -->
+  <div class="stage">
+
+    <div class="card">
+
+      <div class="card-rule"></div>
+
+      <div class="logo-mark">
+        <img src="/lotus_coin_v2.ico" alt="SARAS" class="logo-img" />
+      </div>
+
+      <h1 class="headline">
+        Hey, glad you got <em>SARAS!</em><br>
+        Let us get you the experience<br>in simplified word search.
+      </h1>
+
+      <p class="sub">Enter your license key to activate</p>
+
+      <div class="input-group">
+        <label class="input-label">License ID</label>
+
+        <div class="input-wrap">
+          <input
+            id="licenseInput"
+            class="license-input"
+            type="text"
+            placeholder="XXXX-XXXX-XXXX-XXXX"
+            maxlength="19"
+            autocomplete="off"
+            spellcheck="false"
+            oninput="formatLicense(this)"
+            onkeydown="if(event.key==='Enter') activate()"
+          />
+        </div>
+
+        <button id="ctaBtn" class="cta-btn" onclick="activate()" disabled>
+          Activate SARAS
+        </button>
+
+        <p id="hint" class="hint">Your license key was emailed to you on purchase.</p>
+      </div>
+
+      <div class="bottom-rule"></div>
+    </div>
+
+    <span class="footer-note">© 2025 SARAS · Made for curious readers</span>
+
+  </div>
+
+<script>
+const { ipcRenderer } = require('electron');
+
+function win(action) { ipcRenderer.send('window-' + action); }
+
+// Auto-format input as XXXX-XXXX-XXXX-XXXX
+function formatLicense(input) {
+  let val = input.value.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+  val = val.match(/.{1,4}/g)?.join('-') || val;
+  input.value = val.slice(0, 19);
+
+  const btn  = document.getElementById('ctaBtn');
+  const hint = document.getElementById('hint');
+  const full = input.value.replace(/-/g, '').length === 16;
+
+  btn.disabled = !full;
+  hint.textContent = 'Your license key was emailed to you on purchase.';
+  hint.className = 'hint';
+}
+
+async function activate() {
+  const key  = document.getElementById('licenseInput').value.trim();
+  const hint = document.getElementById('hint');
+  const btn  = document.getElementById('ctaBtn');
+
+  if (key.replace(/-/g, '').length !== 16) return;
+
+  btn.disabled = true;
+  btn.textContent = 'Verifying…';
+  hint.textContent = '';
+  hint.className = 'hint';
+
+  try {
+    const res  = await fetch('http://127.0.0.1:5000/activate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ license: key })
+    });
+    const data = await res.json();
+
+    if (data.success) {
+      hint.textContent = 'License verified. Opening SARAS…';
+      hint.className = 'hint success';
+      setTimeout(() => ipcRenderer.send('onboarding-complete'), 1200);
+    } else {
+      hint.textContent = data.message || 'Invalid license key. Please try again.';
+      hint.className = 'hint error';
+      btn.disabled = false;
+      btn.textContent = 'Activate SARAS';
+    }
+  } catch (e) {
+    hint.textContent = 'Could not connect. Make sure SARAS is running.';
+    hint.className = 'hint error';
+    btn.disabled = false;
+    btn.textContent = 'Activate SARAS';
+  }
+}
+</script>
+
+</body>
+</html>

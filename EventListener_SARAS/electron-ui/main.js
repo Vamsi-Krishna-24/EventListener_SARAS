@@ -210,6 +210,31 @@ function startPopupServer() {
       return;
     }
 
+    if (req.method === 'POST' && req.url === '/update-wiki') {
+      let body = '';
+      req.on('data', chunk => { body += chunk; });
+      req.on('end', () => {
+        try {
+          const data = JSON.parse(body);
+
+          if (popupWin && !popupWin.isDestroyed()) {
+            popupWin.webContents.send('wiki-update', {
+              wikiSummary: data.wikiSummary || '',
+              wikiUrl: data.wikiUrl || '',
+              word: data.word || ''
+            });
+          }
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true }));
+    } catch (e) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'invalid JSON' }));
+    }
+  });
+  return;
+}
+
     // Python tray "Quit" calls this → cleanly shuts down everything
     if (req.method === 'POST' && req.url === '/quit') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -227,7 +252,7 @@ function startPopupServer() {
 }
 
 // ───────────────────────────────────────────────
-// TRAY + QUIT
+// TRAY + QUIT 
 // ───────────────────────────────────────────────
 let tray = null;
 
