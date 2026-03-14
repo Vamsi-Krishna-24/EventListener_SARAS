@@ -170,6 +170,12 @@ _last_popup_time: float = 0.0
 POPUP_COOLDOWN_S: float = 10.0
 
 
+WIKI_HEADERS = {
+    "User-Agent": "SARAS-App/1.0 (https://github.com/saras; saras@example.com) python-httpx",
+    "Accept":     "application/json",
+}
+
+
 def _fetch_wiki(word: str) -> tuple[str, str]:
     """
     Search Wikipedia for `word` and return (summary, page_url).
@@ -182,6 +188,7 @@ def _fetch_wiki(word: str) -> tuple[str, str]:
         search_r = httpx.get(
             "https://en.wikipedia.org/w/api.php",
             params={"action": "opensearch", "search": word, "limit": 3, "format": "json"},
+            headers=WIKI_HEADERS,
             timeout=5,
         )
         best_title = None
@@ -200,7 +207,7 @@ def _fetch_wiki(word: str) -> tuple[str, str]:
         sum_r = httpx.get(
             f"https://en.wikipedia.org/api/rest_v1/page/summary/{best_title.replace(' ', '_')}",
             timeout=5,
-            headers={"Accept": "application/json"},
+            headers=WIKI_HEADERS,
         )
         if sum_r.status_code == 200:
             wdata   = sum_r.json()
@@ -223,23 +230,24 @@ ELECTRON_WIKI_URL = "http://127.0.0.1:5001/update-wiki"
 
 
 def _post_wiki_update(word: str, wiki_summary: str, wiki_url: str):
-    """Send a second POST to Electron with just the Wikipedia data."""
+    """POST just the Wikipedia data to the already-open popup."""
     try:
         with httpx.Client(timeout=3) as client:
-            client.post(ELECTRON_WIKI_URL, json={
+            r = client.post(ELECTRON_WIKI_URL, json={
                 "word":        word,
                 "wikiSummary": wiki_summary,
                 "wikiUrl":     wiki_url,
             })
+            print(f"[WIKI] update sent for '{word}' → {r.status_code}", flush=True)
     except Exception as e:
-        print(f"[WIKI] update post failed: {e}", flush=True)
+        print(f"[WIKI] update post failed for '{word}': {e}", flush=True)
 
 
 def _build_and_post(word: str, result: dict | None):
     """
     Called in a background thread.
-    Step 1: POST dictionary data immediately so popup appears fast.
-    Step 2: Fetch Wikipedia, then POST a wiki-update so the tab fills in.
+    Step 1 — POST dict data immediately so popup appears instantly.
+    Step 2 — Fetch Wikipedia, then POST /update-wiki to fill the wiki tab.
     """
     definition = ""
     examples: list = []
@@ -271,19 +279,23 @@ def _build_and_post(word: str, result: dict | None):
         except Exception as e:
             print(f"[DICT] dictionaryapi.dev failed for '{word}': {e}", flush=True)
 
-    # ── Step 1: POST dict data immediately — popup appears right away ──
     display_word = result.get("word", word) if result else word
+
+    # ── Step 1: send dict data immediately — popup opens right away ──────
     _post_to_electron({
         "word":        display_word,
         "definition":  definition or "No definition found.",
         "examples":    examples,
         "synonyms":    synonyms,
-        "wikiSummary": "",   # will be filled by step 2
+        "wikiSummary": "",
         "wikiUrl":     "",
     })
+    print(f"[DICT] popup opened for '{display_word}'", flush=True)
 
-    # ── Step 2: fetch Wikipedia and push update to the already-open popup ──
+    # ── Step 2: fetch Wikipedia and push update to the open popup ────────
+    print(f"[WIKI] fetching for '{word}'...", flush=True)
     wiki_summary, wiki_url = _fetch_wiki(word)
+    print(f"[WIKI] result for '{word}': summary={wiki_summary[:60] if wiki_summary else 'EMPTY'}", flush=True)
     if wiki_summary:
         _post_wiki_update(display_word, wiki_summary, wiki_url)
 
