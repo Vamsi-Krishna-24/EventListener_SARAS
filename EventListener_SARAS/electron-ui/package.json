@@ -19,6 +19,13 @@
     "win": {
       "icon": "assets/lotus_coin_v2.ico",
       "target": "nsis"
-    }
+    },
+    "extraResources": [
+      { "from": "../dist/Saras.exe", "to": "Saras.exe" },
+      { "from": "../Dictionary.db", "to": "Dictionary.db" }
+    ],
+    "extraFiles": [
+      { "from": "assets", "to": "resources/assets" }
+    ]
   }
 }

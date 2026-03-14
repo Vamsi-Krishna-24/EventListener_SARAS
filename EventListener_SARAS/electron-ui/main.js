@@ -19,7 +19,8 @@ function startPythonBackend() {
   // When in dev:   run saras_app.py directly with python.
   let proc;
   if (app.isPackaged) {
-    const exePath = path.join(process.resourcesPath, 'saras_app', 'saras_app.exe');
+    const exePath = path.join(process.resourcesPath, 'Saras.exe');
+
     proc = spawn(exePath, [], { detached: false });
   } else {
     const scriptPath = path.join(__dirname, '..', 'saras_app.py');
@@ -63,7 +64,7 @@ function createWindow() {
     frame: true,
     titleBarStyle: 'default',
     backgroundColor: '#F7F6F3',
-    skipTaskbar: true,   // ← hide from alt+tab and taskbar
+    skipTaskbar: false,   // ← hide from alt+tab and taskbar
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false
