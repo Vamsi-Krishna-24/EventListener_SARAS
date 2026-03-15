@@ -344,6 +344,24 @@ ipcMain.on('close-popup', () => {
 // "Open in Saras" button inside popup
 ipcMain.on('open-in-saras', (_e, word) => {
   console.log('[SARAS] Open in Saras:', word);
-  if (mainWindow) mainWindow.focus();
-  // TODO: navigate mainWindow to full definition for `word`
+
+  // Create window if it doesn't exist yet
+  if (!mainWindow) createWindow();
+
+  // Show and focus — works whether window was hidden or minimized
+  mainWindow.show();
+  mainWindow.focus();
+
+  // Send the word once the window is ready to receive IPC
+  // (if hidden, webContents is still loaded — but we guard anyway)
+  if (mainWindow.webContents.isLoading()) {
+    mainWindow.webContents.once('did-finish-load', () => {
+      mainWindow.webContents.send('open-word', word);
+    });
+  } else {
+    mainWindow.webContents.send('open-word', word);
+  }
+
+  // Close the popup
+  if (popupWin && !popupWin.isDestroyed()) { popupWin.destroy(); popupWin = null; }
 });

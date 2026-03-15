@@ -1083,6 +1083,14 @@ function sendEmail() {
 function openForm() {
   shell.openExternal('https://forms.google.com');
 }
+
+// ── "Open in Saras" from popup — auto-fill and search the word ─
+ipcRenderer.on('open-word', (_e, word) => {
+  showPanel('home');                                      // switch to home/dictionary panel
+  const input = document.getElementById('searchInput');
+  input.value = word;                                     // fill the search box
+  lookupWord();                                           // trigger the search
+});
 </script>
 </body>
 </html>
