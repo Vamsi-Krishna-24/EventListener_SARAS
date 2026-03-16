@@ -18,6 +18,66 @@
 
   * { margin: 0; padding: 0; box-sizing: border-box; }
 
+  /* ── UPDATE BANNER ── */
+  .update-banner {
+    display: none;
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 9999;
+    background: var(--ink);
+    color: var(--white);
+    border-radius: 10px;
+    padding: 14px 18px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+    max-width: 320px;
+    font-family: 'Outfit', sans-serif;
+    animation: slideUp 0.3s cubic-bezier(0.34,1.45,0.64,1);
+  }
+  .update-banner.visible { display: block; }
+  @keyframes slideUp {
+    from { opacity: 0; transform: translateY(16px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .update-banner-title {
+    font-size: 0.82rem;
+    font-weight: 500;
+    letter-spacing: 0.05em;
+    margin-bottom: 4px;
+    color: var(--gold);
+  }
+  .update-banner-msg {
+    font-size: 0.78rem;
+    color: rgba(255,255,255,0.7);
+    margin-bottom: 12px;
+    line-height: 1.5;
+  }
+  .update-banner-actions { display: flex; gap: 8px; }
+  .update-btn-restart {
+    flex: 1;
+    padding: 7px 0;
+    background: var(--gold);
+    color: var(--ink);
+    border: none;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: opacity 0.15s;
+  }
+  .update-btn-restart:hover { opacity: 0.85; }
+  .update-btn-later {
+    padding: 7px 12px;
+    background: transparent;
+    color: rgba(255,255,255,0.5);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 6px;
+    font-size: 0.78rem;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .update-btn-later:hover { color: var(--white); border-color: rgba(255,255,255,0.3); }
+
   body {
     font-family: 'Outfit', sans-serif;
     background: var(--off);
@@ -911,6 +971,16 @@
   </main>
 </div>
 
+<!-- UPDATE BANNER -->
+<div class="update-banner" id="updateBanner">
+  <div class="update-banner-title">⬆ UPDATE READY</div>
+  <div class="update-banner-msg" id="updateBannerMsg">A new version has been downloaded. Restart to apply.</div>
+  <div class="update-banner-actions">
+    <button class="update-btn-restart" onclick="restartAndInstall()">Restart Now</button>
+    <button class="update-btn-later" onclick="dismissUpdate()">Later</button>
+  </div>
+</div>
+
 <script>
 const { ipcRenderer, shell } = require('electron');
 
@@ -1084,12 +1154,32 @@ function openForm() {
   shell.openExternal('https://forms.google.com');
 }
 
-// ── "Open in Saras" from popup — auto-fill and search the word ─
+// ── Auto-update handlers ─────────────────────────────────────
+ipcRenderer.on('update-downloading', (_e, version) => {
+  // Silently downloading — optionally show a subtle tray tooltip or log
+  console.log(`[UPDATE] Downloading v${version} in background...`);
+});
+
+ipcRenderer.on('update-ready', (_e, version) => {
+  document.getElementById('updateBannerMsg').textContent =
+    `v${version} has been downloaded. Restart SARAS to apply the update.`;
+  document.getElementById('updateBanner').classList.add('visible');
+});
+
+function restartAndInstall() {
+  ipcRenderer.send('restart-and-install');
+}
+
+function dismissUpdate() {
+  document.getElementById('updateBanner').classList.remove('visible');
+}
+
+// ── "Open in Saras" from popup ───────────────────────────────
 ipcRenderer.on('open-word', (_e, word) => {
-  showPanel('home');                                      // switch to home/dictionary panel
+  showPanel('home');
   const input = document.getElementById('searchInput');
-  input.value = word;                                     // fill the search box
-  lookupWord();                                           // trigger the search
+  input.value = word;
+  lookupWord();
 });
 </script>
 </body>

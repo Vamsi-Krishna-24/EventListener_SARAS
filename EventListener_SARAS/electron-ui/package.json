@@ -1,31 +1,50 @@
 {
   "name": "saras-dictionary",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "SARAS — The Windows Dictionary App for Curious Readers",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "build": "electron-builder"
+    "build": "electron-builder",
+    "dist":  "electron-builder --publish always"
   },
   "author": "SARAS",
   "license": "MIT",
   "devDependencies": {
     "electron": "^28.0.0",
-    "electron-builder": "^24.0.0"
+    "electron-builder": "^24.13.3"
   },
   "build": {
     "appId": "com.saras.dictionary",
     "productName": "SARAS",
+    "publish": {
+      "provider": "github",
+      "owner": "Vamsi-Krishna-24",
+      "repo":  "EventListener_SARAS"
+    },
     "win": {
       "icon": "assets/lotus_coin_v2.ico",
       "target": "nsis"
     },
     "extraResources": [
-      { "from": "../dist/Saras.exe", "to": "Saras.exe" },
-      { "from": "../Dictionary.db", "to": "Dictionary.db" }
+      {
+        "from": "../dist/Saras.exe",
+        "to": "Saras.exe"
+      },
+      {
+        "from": "../Dictionary.db",
+        "to": "Dictionary.db"
+      }
     ],
     "extraFiles": [
-      { "from": "assets", "to": "resources/assets" }
+      {
+        "from": "assets",
+        "to": "resources/assets"
+      }
     ]
+  },
+  "dependencies": {
+    "electron-log": "^5.4.3",
+    "electron-updater": "^6.8.3"
   }
 }
