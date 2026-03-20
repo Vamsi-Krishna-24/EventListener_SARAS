@@ -31,52 +31,7 @@
     user-select: none;
   }
 
-  /* ── TITLEBAR ── */
-  .titlebar {
-    height: 32px;
-    background: rgba(0,0,0,0.5);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0 0 0 14px;
-    -webkit-app-region: drag;
-    flex-shrink: 0;
-    border-bottom: 1px solid rgba(229,227,220,0.05);
-  }
-  .titlebar-brand {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-  .titlebar-name {
-    font-family: 'Playfair Display', serif;
-    font-size: 0.7rem;
-    font-weight: 600;
-    letter-spacing: 0.25em;
-    color: rgba(181,181,173,0.4);
-    text-transform: uppercase;
-  }
-  /* Windows-style controls — right side */
-  .titlebar-controls {
-    display: flex;
-    -webkit-app-region: no-drag;
-    height: 32px;
-  }
-  .win-btn {
-    width: 46px;
-    height: 32px;
-    border: none;
-    background: transparent;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: background 0.12s;
-    color: rgba(181,181,173,0.55);
-  }
-  .win-btn:hover { background: rgba(255,255,255,0.08); color: var(--white); }
-  .win-btn.win-close:hover { background: #C42B1C; color: var(--white); }
-  .win-btn svg { width: 10px; height: 10px; stroke-width: 1.5; }
+  /* Native titlebar is used — no custom titlebar needed */
 
   /* ── MAIN STAGE ── */
   .stage {
@@ -303,34 +258,6 @@
 </head>
 <body>
 
-  <!-- Titlebar -->
-  <div class="titlebar">
-    <div class="titlebar-brand">
-      <span class="titlebar-name">SARAS</span>
-    </div>
-    <div class="titlebar-controls">
-      <!-- Minimize -->
-      <button class="win-btn win-min" onclick="win('minimize')" title="Minimize">
-        <svg viewBox="0 0 10 10" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <line x1="0" y1="5" x2="10" y2="5" stroke="currentColor" stroke-width="1.2"/>
-        </svg>
-      </button>
-      <!-- Maximize -->
-      <button class="win-btn win-max" onclick="win('maximize')" title="Maximize">
-        <svg viewBox="0 0 10 10" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <rect x="0.6" y="0.6" width="8.8" height="8.8" stroke="currentColor" stroke-width="1.2" fill="none"/>
-        </svg>
-      </button>
-      <!-- Close -->
-      <button class="win-btn win-close" onclick="win('close')" title="Close">
-        <svg viewBox="0 0 10 10" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <line x1="0.5" y1="0.5" x2="9.5" y2="9.5" stroke="currentColor" stroke-width="1.2"/>
-          <line x1="9.5" y1="0.5" x2="0.5" y2="9.5" stroke="currentColor" stroke-width="1.2"/>
-        </svg>
-      </button>
-    </div>
-  </div>
-
   <!-- Stage -->
   <div class="stage">
 
@@ -339,7 +266,7 @@
       <div class="card-rule"></div>
 
       <div class="logo-mark">
-        <img src="/lotus_coin_v2.ico" alt="SARAS" class="logo-img" />
+        <img src="../assets/lotus_coin_v2.ico" alt="SARAS" class="logo-img" />
       </div>
 
       <h1 class="headline">
@@ -357,11 +284,11 @@
             id="licenseInput"
             class="license-input"
             type="text"
-            placeholder="XXXX-XXXX-XXXX-XXXX"
-            maxlength="19"
+            placeholder="Enter your license key"
+            maxlength="40"
             autocomplete="off"
             spellcheck="false"
-            oninput="formatLicense(this)"
+            oninput="onLicenseInput(this)"
             onkeydown="if(event.key==='Enter') activate()"
           />
         </div>
@@ -385,17 +312,11 @@ const { ipcRenderer } = require('electron');
 
 function win(action) { ipcRenderer.send('window-' + action); }
 
-// Auto-format input as XXXX-XXXX-XXXX-XXXX
-function formatLicense(input) {
-  let val = input.value.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-  val = val.match(/.{1,4}/g)?.join('-') || val;
-  input.value = val.slice(0, 19);
-
+// Enable button once user has typed at least 6 characters
+function onLicenseInput(input) {
   const btn  = document.getElementById('ctaBtn');
   const hint = document.getElementById('hint');
-  const full = input.value.replace(/-/g, '').length === 16;
-
-  btn.disabled = !full;
+  btn.disabled = input.value.trim().length < 6;
   hint.textContent = 'Your license key was emailed to you on purchase.';
   hint.className = 'hint';
 }
@@ -405,7 +326,7 @@ async function activate() {
   const hint = document.getElementById('hint');
   const btn  = document.getElementById('ctaBtn');
 
-  if (key.replace(/-/g, '').length !== 16) return;
+  if (key.length < 6) return;
 
   btn.disabled = true;
   btn.textContent = 'Verifying…';
@@ -416,16 +337,16 @@ async function activate() {
     const res  = await fetch('http://127.0.0.1:5000/activate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ license: key })
+      body: JSON.stringify({ license_key: key })
     });
     const data = await res.json();
 
     if (data.success) {
-      hint.textContent = 'License verified. Opening SARAS…';
+      hint.textContent = `Welcome, ${data.first_name}! Opening SARAS…`;
       hint.className = 'hint success';
-      setTimeout(() => ipcRenderer.send('onboarding-complete'), 1200);
+      setTimeout(() => ipcRenderer.send('navigate-to-main'), 1200);
     } else {
-      hint.textContent = data.message || 'Invalid license key. Please try again.';
+      hint.textContent = data.error || 'Invalid license key. Please try again.';
       hint.className = 'hint error';
       btn.disabled = false;
       btn.textContent = 'Activate SARAS';

@@ -711,6 +711,23 @@
     text-transform: uppercase;
   }
 
+  /* ── HOME GREETING ── */
+  .home-greeting {
+    font-size: 0.72rem;
+    font-weight: 400;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--gold);
+    margin-bottom: 14px;
+    min-height: 16px;
+    opacity: 0;
+    animation: greetIn 0.7s 0.15s cubic-bezier(0.22,1,0.36,1) forwards;
+  }
+  @keyframes greetIn {
+    from { opacity: 0; transform: translateY(5px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
   /* Scrollbar */
   ::-webkit-scrollbar { width: 6px; }
   ::-webkit-scrollbar-track { background: transparent; }
@@ -805,6 +822,7 @@
 
     <!-- HOME PANEL -->
     <div class="panel active" id="panel-home">
+      <p id="home-greeting" class="home-greeting"></p>
       <div class="panel-eyebrow">Dictionary</div>
       <h1 class="panel-title">Look Up a Word</h1>
       <p class="panel-subtitle">Type or paste any word to get its definition instantly.</p>
@@ -1181,6 +1199,38 @@ ipcRenderer.on('open-word', (_e, word) => {
   input.value = word;
   lookupWord();
 });
+
+// ── Personalised greeting ────────────────────────────────────
+async function loadGreeting() {
+  try {
+    const res  = await fetch(`${API}/check-activation`);
+    const data = await res.json();
+    if (!data.activated) return;
+
+    const name = data.first_name;
+    const day  = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][new Date().getDay()];
+    const hour = new Date().getHours();
+    const time = hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : 'evening';
+
+    const pool = [
+      `Happy ${day}, ${name}!`,
+      `Good ${time}, ${name}!`,
+      `Welcome back, ${name}!`,
+      `${name} returns — let's get learning.`,
+      `Ready for today, ${name}?`,
+      `Let's start SARAS, ${name}!`,
+      `Hi ${name}, good to see you.`,
+    ];
+
+    // Rotates daily — stable within a session
+    const greeting = pool[new Date().getDate() % pool.length];
+    document.getElementById('home-greeting').textContent = greeting;
+  } catch (e) {
+    // Backend not ready yet — silently skip, greeting stays empty
+  }
+}
+
+loadGreeting();
 </script>
 </body>
 </html>

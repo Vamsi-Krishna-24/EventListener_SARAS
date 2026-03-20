@@ -6,21 +6,18 @@ const { spawn } = require('child_process');
 let mainWindow;
 let popupServer;
 let popupWin = null;
-let lastPopupTime = 0;  // debounce rapid double-taps
+let lastPopupTime = 0;
 let pythonProcess = null;
 
 // ───────────────────────────────────────────────
 // PYTHON BACKEND
 // ───────────────────────────────────────────────
 function startPythonBackend() {
-  if (pythonProcess) return; // already running
+  if (pythonProcess) return;
 
-  // When packaged: run compiled saras_app.exe bundled in resources.
-  // When in dev:   run saras_app.py directly with python.
   let proc;
   if (app.isPackaged) {
     const exePath = path.join(process.resourcesPath, 'Saras.exe');
-
     proc = spawn(exePath, [], { detached: false });
   } else {
     const scriptPath = path.join(__dirname, '..', 'saras_app.py');
@@ -64,7 +61,7 @@ function createWindow() {
     frame: true,
     titleBarStyle: 'default',
     backgroundColor: '#F7F6F3',
-    skipTaskbar: false,   // ← hide from alt+tab and taskbar
+    skipTaskbar: false,
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false
@@ -73,14 +70,14 @@ function createWindow() {
   });
 
   Menu.setApplicationMenu(null);
-  mainWindow.loadFile('index.html');
+  loadStartPage();
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
     return { action: 'deny' };
   });
 
-  // ← Hide instead of close — keeps backend alive
+  // Hide instead of close — keeps backend alive
   mainWindow.on('close', (e) => {
     if (!app.isQuitting) {
       e.preventDefault();
@@ -92,25 +89,78 @@ function createWindow() {
 }
 
 // ───────────────────────────────────────────────
+// START PAGE — polls Python, routes to onboarding or main app
+// ───────────────────────────────────────────────
+const RETRY_DELAY = 600;
+const MAX_RETRIES = 15;
+
+function loadStartPage(attempt = 0) {
+  http.get('http://127.0.0.1:5000/check-activation', (res) => {
+    let body = '';
+    res.on('data', chunk => { body += chunk; });
+    res.on('end', () => {
+      try {
+        const data = JSON.parse(body);
+        if (data.activated) {
+          console.log(`[SARAS] Activated — welcome back ${data.first_name}`);
+          mainWindow.loadFile('index.html');
+        } else {
+          console.log('[SARAS] Not activated — loading onboarding');
+          mainWindow.loadFile(path.join(__dirname, 'renderer', 'onboarding.html'));
+        }
+      } catch (e) {
+        mainWindow.loadFile(path.join(__dirname, 'renderer', 'onboarding.html'));
+      }
+    });
+  }).on('error', () => {
+    if (attempt < MAX_RETRIES) {
+      console.log(`[SARAS] Python not ready yet, retrying... (${attempt + 1}/${MAX_RETRIES})`);
+      setTimeout(() => loadStartPage(attempt + 1), RETRY_DELAY);
+    } else {
+      console.error('[SARAS] Python unreachable — falling back to onboarding');
+      mainWindow.loadFile(path.join(__dirname, 'renderer', 'onboarding.html'));
+    }
+  });
+}
+
+// ───────────────────────────────────────────────
 // POPUP WINDOW
 // ───────────────────────────────────────────────
-function createPopupWindow({ word = '', definition = '', examples = [], synonyms = [], wikiSummary = '', wikiUrl = '' }) {
-  // Debounce: ignore rapid-fire calls within 400ms
+function createPopupWindow({ word = '', definition = '', examples = [], synonyms = [], wikiSummary = '', wikiUrl = '', clickX = null, clickY = null }) {
+  // Debounce: ignore rapid-fire calls within 700ms
   const now = Date.now();
   if (now - lastPopupTime < 700) return;
   lastPopupTime = now;
 
-  // Destroy any existing popup immediately (destroy() is sync, close() is async
-  // and causes a race where the old window lingers while the new one opens)
   if (popupWin) {
     try { popupWin.destroy(); } catch (_) {}
     popupWin = null;
   }
 
-  // Position near the mouse cursor
-  const cursor  = screen.getCursorScreenPoint();
+  // pynput captures x,y synchronously at click time.
+  // Python is DPI-unaware by default on Windows, so GetCursorPos (used
+  // internally by pynput) already returns logical pixels — the same
+  // coordinate space as Electron's screen.getCursorScreenPoint().
+  // Use them directly with no scaling or conversion.
+  let cursor;
+  if (clickX !== null && clickY !== null) {
+    cursor = screen.screenToDipPoint({
+      x: Math.round(clickX),
+      y: Math.round(clickY)
+    });
+  } else {
+    cursor = screen.getCursorScreenPoint();
+  }
+
   const display = screen.getDisplayNearestPoint(cursor);
   const { bounds } = display;
+
+  console.log('[POPUP DEBUG]', {
+    rawClick: { clickX, clickY },
+    cursor,
+    bounds,
+    scaleFactor: display.scaleFactor
+  });
 
   const spaceBelow = (bounds.y + bounds.height) - cursor.y;
   const tailDir    = spaceBelow >= POPUP_H ? 'up' : 'down';
@@ -123,31 +173,24 @@ function createPopupWindow({ word = '', definition = '', examples = [], synonyms
   winTop  = Math.max(bounds.y, Math.min(winTop,  bounds.y + bounds.height - POPUP_H));
 
   const tailX = cursor.x - winLeft;
-popupWin = new BrowserWindow({
-  x: winLeft,
-  y: winTop,
-  width: POPUP_W,
-  height: POPUP_H,
-  frame: false,
-  transparent: true,
-  alwaysOnTop: true,
-  resizable: false,
-  skipTaskbar: true,
-  webPreferences: {
-    preload: path.join(__dirname, 'preload.js'),
-    contextIsolation: true,
-    nodeIntegration: false,
-  },
-  icon: path.join(__dirname, 'assets', 'lotus_coin_v2.ico')
-});
 
-// CLOSE POPUP WHEN USER CLICKS ANYWHERE ELSE
-popupWin.on('blur', () => {
-  if (popupWin && !popupWin.isDestroyed()) {
-    popupWin.destroy();
-    popupWin = null;
-  }
-});
+  popupWin = new BrowserWindow({
+    x: winLeft,
+    y: winTop,
+    width: POPUP_W,
+    height: POPUP_H,
+    frame: false,
+    transparent: true,
+    alwaysOnTop: true,
+    resizable: false,
+    skipTaskbar: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+    icon: path.join(__dirname, 'assets', 'lotus_coin_v2.ico')
+  });
 
   popupWin.loadFile(path.join(__dirname, 'renderer', 'popup.html'));
 
@@ -156,6 +199,8 @@ popupWin.on('blur', () => {
   const wc = popupWin.webContents;
   wc.once('did-finish-load', () => {
     if (!popupWin || popupWin.isDestroyed()) return;
+
+    // Send word data to renderer
     wc.send('word-data', {
       word,
       phonetic:    '',
@@ -168,9 +213,24 @@ popupWin.on('blur', () => {
       tailX,
       tailDir,
     });
+
+    // Register blur AFTER page is fully loaded and data is sent.
+    // Registering it earlier causes page-load focus events to prematurely
+    // destroy the popup, making it appear stuck or at the wrong position
+    // on a subsequent retry.
+    popupWin.on('blur', () => {
+      if (popupWin && !popupWin.isDestroyed()) {
+        popupWin.destroy();
+        popupWin = null;
+      }
+    });
+
+    // Focus the popup so blur fires when user clicks elsewhere.
+    // Called after load so Windows grants focus reliably.
+    popupWin.focus();
   });
 
-  // Auto-close after 8 s
+  // Auto-close after 8s as safety net (covers cases where blur doesn't fire)
   const autoClose = setTimeout(() => {
     if (popupWin && !popupWin.isDestroyed()) { popupWin.destroy(); popupWin = null; }
   }, 8000);
@@ -182,18 +242,29 @@ popupWin.on('blur', () => {
 }
 
 // ───────────────────────────────────────────────
-// POPUP SERVER  — listens on :5001 for Python POSTs
+// POPUP SERVER — listens on :5001 for Python POSTs
 // ───────────────────────────────────────────────
 function startPopupServer() {
   popupServer = http.createServer((req, res) => {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Origin',  '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
     if (req.method === 'OPTIONS') {
       res.writeHead(204); res.end(); return;
     }
 
+    // ── GET /cursor-pos ──────────────────────────────────────────────────────
+    // Python no longer needs this (pynput coords are already logical),
+    // but kept as a diagnostic endpoint.
+    if (req.method === 'GET' && req.url === '/cursor-pos') {
+      const pos = screen.getCursorScreenPoint();
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ x: pos.x, y: pos.y }));
+      return;
+    }
+
+    // ── POST /show-popup ─────────────────────────────────────────────────────
     if (req.method === 'POST' && req.url === '/show-popup') {
       let body = '';
       req.on('data', chunk => { body += chunk; });
@@ -211,32 +282,31 @@ function startPopupServer() {
       return;
     }
 
+    // ── POST /update-wiki ────────────────────────────────────────────────────
     if (req.method === 'POST' && req.url === '/update-wiki') {
       let body = '';
       req.on('data', chunk => { body += chunk; });
       req.on('end', () => {
         try {
           const data = JSON.parse(body);
-
           if (popupWin && !popupWin.isDestroyed()) {
             popupWin.webContents.send('wiki-update', {
               wikiSummary: data.wikiSummary || '',
-              wikiUrl: data.wikiUrl || '',
-              word: data.word || ''
+              wikiUrl:     data.wikiUrl     || '',
+              word:        data.word        || '',
             });
           }
-
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ ok: true }));
-    } catch (e) {
-      res.writeHead(400, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'invalid JSON' }));
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: true }));
+        } catch (e) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'invalid JSON' }));
+        }
+      });
+      return;
     }
-  });
-  return;
-}
 
-    // Python tray "Quit" calls this → cleanly shuts down everything
+    // ── POST /quit — Python tray Quit ────────────────────────────────────────
     if (req.method === 'POST' && req.url === '/quit') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: true }));
@@ -253,12 +323,12 @@ function startPopupServer() {
 }
 
 // ───────────────────────────────────────────────
-// TRAY + QUIT 
+// TRAY + QUIT
 // ───────────────────────────────────────────────
 let tray = null;
 
 function createTray() {
-  const { Tray, nativeImage } = require('electron');
+  const { Tray } = require('electron');
   const iconPath = path.join(__dirname, 'assets', 'lotus_coin_v2.ico');
   tray = new Tray(iconPath);
   tray.setToolTip('SARAS — Running');
@@ -281,7 +351,6 @@ function createTray() {
 
   tray.setContextMenu(contextMenu);
 
-  // Single click also opens the window
   tray.on('click', () => {
     if (!mainWindow) createWindow();
     mainWindow.show();
@@ -301,14 +370,13 @@ function quitApp() {
 // APP LIFECYCLE
 // ───────────────────────────────────────────────
 app.whenReady().then(() => {
+  startPythonBackend();
   createWindow();
   createTray();
   startPopupServer();
-  startPythonBackend();
 });
 
-// Don't quit when all windows are closed — tray keeps it alive
-app.on('window-all-closed', () => { /* do nothing */ });
+app.on('window-all-closed', () => { /* tray keeps it alive */ });
 
 app.on('activate', () => {
   if (!mainWindow) createWindow();
@@ -336,6 +404,16 @@ ipcMain.on('window-close', () => { if (mainWindow) mainWindow.hide(); });
 
 ipcMain.on('open-external', (event, url) => { shell.openExternal(url); });
 
+// Onboarding complete — start listener + tray, then load main app
+ipcMain.on('navigate-to-main', () => {
+  console.log('[SARAS] Activation complete — starting listener and loading main app');
+  http.request({
+    hostname: '127.0.0.1', port: 5000, path: '/start-listener', method: 'POST',
+    headers: { 'Content-Length': '0' }
+  }, () => {}).end();
+  mainWindow.loadFile('index.html');
+});
+
 // Popup closes itself
 ipcMain.on('close-popup', () => {
   if (popupWin && !popupWin.isDestroyed()) { popupWin.destroy(); popupWin = null; }
@@ -345,15 +423,10 @@ ipcMain.on('close-popup', () => {
 ipcMain.on('open-in-saras', (_e, word) => {
   console.log('[SARAS] Open in Saras:', word);
 
-  // Create window if it doesn't exist yet
   if (!mainWindow) createWindow();
-
-  // Show and focus — works whether window was hidden or minimized
   mainWindow.show();
   mainWindow.focus();
 
-  // Send the word once the window is ready to receive IPC
-  // (if hidden, webContents is still loaded — but we guard anyway)
   if (mainWindow.webContents.isLoading()) {
     mainWindow.webContents.once('did-finish-load', () => {
       mainWindow.webContents.send('open-word', word);
@@ -362,6 +435,5 @@ ipcMain.on('open-in-saras', (_e, word) => {
     mainWindow.webContents.send('open-word', word);
   }
 
-  // Close the popup
   if (popupWin && !popupWin.isDestroyed()) { popupWin.destroy(); popupWin = null; }
 });

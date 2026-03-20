@@ -40,7 +40,13 @@ from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
 from PyQt6.QtCore import Qt, QTimer, QObject, pyqtSignal, pyqtSlot, QMetaObject, Qt as QtCore
 from PyQt6.QtGui import QFont, QColor, QIcon, QPixmap, QPainter, QPen, QAction
 
-from db_handler import get_word_meaning
+from db_handler import (
+    get_word_meaning,
+    init_profile_db,
+    save_user_profile,
+    get_user_profile,
+    is_activated,
+)
 from listener1 import ListenerController
 
 print("[SARAS] Imports OK", flush=True)
@@ -139,6 +145,8 @@ class AppState(QObject):
 
 STATE      = None   # assigned after QApplication
 controller = None   # ListenerController — assigned in main()
+tray       = None   # SarasTray — assigned in main() or after activation
+_tray_needed = threading.Event()  # set by /start-listener to trigger tray creation on Qt thread
 
 
 # ───────────────────────────────────────────────
@@ -243,7 +251,7 @@ def _post_wiki_update(word: str, wiki_summary: str, wiki_url: str):
         print(f"[WIKI] update post failed for '{word}': {e}", flush=True)
 
 
-def _build_and_post(word: str, result: dict | None):
+def _build_and_post(word: str, result: dict | None, click_x: int, click_y: int):
     """
     Called in a background thread.
     Step 1 — POST dict data immediately so popup appears instantly.
@@ -289,6 +297,8 @@ def _build_and_post(word: str, result: dict | None):
         "synonyms":    synonyms,
         "wikiSummary": "",
         "wikiUrl":     "",
+        "clickX":      click_x,
+        "clickY":      click_y,
     })
     print(f"[DICT] popup opened for '{display_word}'", flush=True)
 
@@ -304,18 +314,20 @@ def process_queue():
     """Called every 100 ms by QTimer on the Qt main thread."""
     global _last_popup_word, _last_popup_time
 
-    # Drain the whole queue, act only on the latest word
-    words = []
+    # Drain the whole queue, act only on the latest item
+    items = []
     while not word_queue.empty():
         try:
-            words.append(word_queue.get_nowait())
+            items.append(word_queue.get_nowait())
         except queue.Empty:
             break
 
-    if not words:
+    if not items:
         return
 
-    word = words[-1].strip().lower()
+    # Each item is (word, x, y)
+    word, click_x, click_y = items[-1]
+    word = word.strip().lower()
 
     # Cooldown: skip if the same word fired recently
     now = time.monotonic()
@@ -329,7 +341,7 @@ def process_queue():
     # All network calls in a background thread — never block Qt
     threading.Thread(
         target=_build_and_post,
-        args=(word, result),
+        args=(word, result, click_x, click_y),
         daemon=True,
     ).start()
 
@@ -522,6 +534,90 @@ async def define_word(word: str):
     return {"error": "not found", "word": word}
 
 
+@api.get("/check-activation")
+def check_activation():
+    """
+    Called by main.js on every app launch.
+    Returns activation status and user profile if found locally.
+    """
+    profile = get_user_profile()
+    if profile:
+        return {
+            "activated":  True,
+            "first_name": profile["first_name"],
+            "last_name":  profile["last_name"],
+            "email":      profile["email"],
+        }
+    return { "activated": False }
+
+
+class ActivateRequest(BaseModel):
+    license_key: str
+
+
+@api.post("/activate")
+async def activate_license(body: ActivateRequest):
+    """
+    Called by onboarding.html when user submits their license key.
+    1. Forwards the key to getsaras.com/payments/activate/
+    2. On success, saves the profile locally and returns it to Electron.
+    """
+    if not body.license_key or not body.license_key.strip():
+        return { "error": "License key is required" }
+
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.post(
+                "https://getsaras.com/payments/activate/",
+                json={ "license_key": body.license_key.strip() }
+            )
+
+        if r.status_code == 200:
+            data = r.json()
+
+            if data.get("status") == "activated":
+                save_user_profile(
+                    first_name=  data["first_name"],
+                    last_name=   data["last_name"],
+                    email=       data["email"],
+                    license_key= body.license_key.strip(),
+                )
+                return {
+                    "success":    True,
+                    "first_name": data["first_name"],
+                    "last_name":  data["last_name"],
+                    "email":      data["email"],
+                }
+
+            # Server responded but key was rejected
+            return { "success": False, "error": data.get("message", "Invalid license key") }
+
+        # Non-200 from server
+        return { "success": False, "error": f"Server returned {r.status_code}" }
+
+    except httpx.TimeoutException:
+        return { "success": False, "error": "Request timed out — check your internet connection" }
+    except Exception as e:
+        print(f"[ACTIVATE] Unexpected error: {e}", flush=True)
+        return { "success": False, "error": "Something went wrong — please try again" }
+
+
+@api.post("/start-listener")
+def start_listener():
+    """
+    Called by main.js after first-time activation via navigate-to-main.
+    Single entry point — starts listener and flags Qt thread to show tray.
+    """
+    if controller and not controller.is_running():
+        controller.start()
+        print("[SARAS] Listener started via /start-listener", flush=True)
+    else:
+        print("[SARAS] /start-listener: listener already running", flush=True)
+
+    _tray_needed.set()
+    return { "ok": True }
+
+
 def _run_api():
     """Run FastAPI in a daemon thread — dies when main thread exits."""
     uvicorn.run(api, host="127.0.0.1", port=5000, log_level="warning")
@@ -537,15 +633,22 @@ def main():
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
 
+    # Ensure profile DB + table exist before anything else runs
+    init_profile_db()
+
     STATE = AppState()
     print(f"[SARAS] STATE ready — active={STATE.active}, trigger={STATE.trigger_mode}", flush=True)
 
-    # ── Listener ────────────────────────────────
+    # ── Listener — only start if user is already activated ──────
     controller = ListenerController(
         word_queue=word_queue,
         trigger_mode=STATE.trigger_mode
     )
-    controller.start()
+    if is_activated():
+        controller.start()
+        print("[SARAS] User activated — listener started", flush=True)
+    else:
+        print("[SARAS] Not activated — listener held until activation", flush=True)
 
     # Wire STATE.toggled → start/stop listener
     STATE.toggled.connect(
@@ -558,8 +661,22 @@ def main():
     queue_timer.timeout.connect(process_queue)
     queue_timer.start(100)
 
-    # ── Tray ────────────────────────────────────
-    tray = SarasTray()
+    # ── Tray check timer — creates tray on Qt thread after activation ──
+    def _check_tray_needed():
+        global tray
+        if tray is None and _tray_needed.is_set():
+            tray = SarasTray()
+            _tray_needed.clear()
+            print("[SARAS] Tray icon created after activation", flush=True)
+
+    tray_check_timer = QTimer()
+    tray_check_timer.timeout.connect(_check_tray_needed)
+    tray_check_timer.start(300)
+
+    # ── Tray — only show if user is already activated ────
+    tray = SarasTray() if is_activated() else None
+    if not tray:
+        print("[SARAS] Not activated — tray icon held until activation", flush=True)
 
     # ── FastAPI in background thread ─────────────
     api_thread = threading.Thread(target=_run_api, daemon=True)
