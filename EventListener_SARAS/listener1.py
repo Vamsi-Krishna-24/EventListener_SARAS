@@ -1,14 +1,14 @@
 # listener1.py
 # SARAS event listener
-import ctypes
 
-try:
-    ctypes.windll.shcore.SetProcessDpiAwareness(2)
-except Exception:
-    try:
-        ctypes.windll.user32.SetProcessDPIAware()
-    except Exception:
-        pass
+# ── NOTE: Do NOT set DPI-awareness in this process. ──────────────────
+# Keeping Python DPI-unaware means GetCursorPos (used by pynput and by
+# our explicit ctypes call in saras_app.py) returns virtualised logical
+# coordinates — the same space Electron uses for BrowserWindow placement.
+# Any SetProcessDpiAwareness / SetProcessDPIAware call would switch
+# GetCursorPos to physical pixels and break popup positioning on scaled
+# displays.
+# ─────────────────────────────────────────────────────────────────────
     
 import time
 import threading

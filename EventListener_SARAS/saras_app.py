@@ -28,6 +28,25 @@ import queue
 
 print("[SARAS] Starting...", flush=True)
 
+# ───────────────────────────────────────────────
+# WIN32: DPI-safe cursor position
+# ───────────────────────────────────────────────
+# IMPORTANT — Do NOT set DPI-awareness anywhere in this process.
+#   • Remove SetProcessDpiAwareness / SetProcessDPIAware calls from listener1.py
+#   • Remove dpi_aware.manifest from Saras.spec
+# Keeping the process DPI-unaware means GetCursorPos returns virtualised
+# logical coordinates — exactly the same space Electron uses for
+# BrowserWindow positioning.  No conversion needed on either side.
+import ctypes
+import ctypes.wintypes as wintypes
+
+def get_cursor_pos() -> tuple[int, int]:
+    """Return current cursor position in logical (DPI-virtualised) pixels.
+    Only valid when the process is DPI-unaware (Windows default)."""
+    pt = wintypes.POINT()
+    ctypes.windll.user32.GetCursorPos(ctypes.byref(pt))
+    return pt.x, pt.y
+
 import pyperclip
 import uvicorn
 import httpx
@@ -67,23 +86,28 @@ def _find_icon(filename):
     return ""
 
 
-def _load_icon(path, fallback_color="#2D2926", fallback_letter="S"):
-    if path and os.path.exists(path):
-        return QIcon(path)
-    # fallback: painted circle with letter
-    pm = QPixmap(64, 64)
-    pm.fill(Qt.GlobalColor.transparent)
-    p = QPainter(pm)
-    p.setRenderHint(QPainter.RenderHint.Antialiasing)
-    p.setBrush(QColor(fallback_color))
-    p.setPen(Qt.PenStyle.NoPen)
-    p.drawEllipse(4, 4, 56, 56)
-    p.setPen(QPen(QColor("#FFFFFF")))
-    f = QFont("Georgia", 22, QFont.Weight.Bold)
-    p.setFont(f)
-    p.drawText(pm.rect(), Qt.AlignmentFlag.AlignCenter, fallback_letter)
-    p.end()
-    return QIcon(pm)
+def _load_icon(filepath: str, fallback_color: str, label: str) -> QIcon:
+    """
+    Load a tray icon from an .ico file.
+    If the file is missing, generate a small coloured circle with a label
+    so the tray icon is never blank.
+    """
+    if filepath and os.path.exists(filepath):
+        return QIcon(filepath)
+
+    # Fallback — draw a 64×64 coloured circle with the label text
+    pix = QPixmap(64, 64)
+    pix.fill(QColor(0, 0, 0, 0))
+    painter = QPainter(pix)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.setBrush(QColor(fallback_color))
+    painter.setPen(QPen(QColor(fallback_color), 0))
+    painter.drawEllipse(4, 4, 56, 56)
+    painter.setPen(QColor("white"))
+    painter.setFont(QFont("Arial", 16, QFont.Weight.Bold))
+    painter.drawText(pix.rect(), Qt.AlignmentFlag.AlignCenter, label)
+    painter.end()
+    return QIcon(pix)
 
 
 # ───────────────────────────────────────────────
@@ -301,6 +325,7 @@ def _build_and_post(word: str, result: dict | None, click_x: int, click_y: int):
         "clickY":      click_y,
     })
     print(f"[DICT] popup opened for '{display_word}'", flush=True)
+    print(f"[COORD DEBUG] word='{display_word}' clickX={click_x} clickY={click_y}", flush=True)
 
     # ── Step 2: fetch Wikipedia and push update to the open popup ────────
     print(f"[WIKI] fetching for '{word}'...", flush=True)
@@ -325,7 +350,9 @@ def process_queue():
     if not items:
         return
 
-    # Each item is (word, x, y)
+    # Each item is (word, x, y) — pynput captures these synchronously
+    # at click time.  With the process kept DPI-unaware, these are
+    # already logical/DIP coordinates that match Electron's space.
     word, click_x, click_y = items[-1]
     word = word.strip().lower()
 

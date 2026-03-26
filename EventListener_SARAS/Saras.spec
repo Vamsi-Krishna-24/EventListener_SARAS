@@ -35,5 +35,4 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon=['lotus_coin_v2.ico'],
-    manifest='dpi_aware.manifest',
 )

@@ -137,13 +137,11 @@ function createPopupWindow({ word = '', definition = '', examples = [], synonyms
     popupWin = null;
   }
 
-  // pynput captures x,y synchronously at click time.
-  // Python is DPI-unaware by default on Windows, so GetCursorPos (used
-  // internally by pynput) already returns logical pixels — the same
-  // coordinate space as Electron's screen.getCursorScreenPoint().
-  // Use them directly with no scaling or conversion.
-  let cursor;
+let cursor;
   if (clickX !== null && clickY !== null) {
+    // pynput sends physical-pixel coordinates; convert to Electron's
+    // logical/DIP space so the popup lands on the correct spot,
+    // especially on scaled displays (125%, 150%, etc.).
     cursor = screen.screenToDipPoint({
       x: Math.round(clickX),
       y: Math.round(clickY)
@@ -156,27 +154,26 @@ function createPopupWindow({ word = '', definition = '', examples = [], synonyms
   const { bounds } = display;
 
   console.log('[POPUP DEBUG]', {
-    rawClick: { clickX, clickY },
+    rawClick: { clickX: Math.round(clickX), clickY: Math.round(clickY) },
     cursor,
     bounds,
     scaleFactor: display.scaleFactor
   });
 
-  const spaceBelow = (bounds.y + bounds.height) - cursor.y;
-  const tailDir    = spaceBelow >= POPUP_H ? 'up' : 'down';
+  // Simple, reliable positioning: always appear slightly BELOW the click point
+  // This works much better with mixed scaling and avoids tailDir complexity
+  let winLeft = cursor.x - (POPUP_W / 2);
+  let winTop  = cursor.y + 26;        // ← Sweet spot for most users on 125% scaling
 
-  let winTop  = tailDir === 'up' ? cursor.y + 16 : cursor.y - POPUP_H - 16;
-  let winLeft = cursor.x - POPUP_W / 2;
-
-  // Clamp to screen bounds
-  winLeft = Math.max(bounds.x, Math.min(winLeft, bounds.x + bounds.width  - POPUP_W));
-  winTop  = Math.max(bounds.y, Math.min(winTop,  bounds.y + bounds.height - POPUP_H));
+  // Clamp to screen bounds with small padding
+  winLeft = Math.max(bounds.x + 12, Math.min(winLeft, bounds.x + bounds.width - POPUP_W - 12));
+  winTop  = Math.max(bounds.y + 12, Math.min(winTop, bounds.y + bounds.height - POPUP_H - 30));
 
   const tailX = cursor.x - winLeft;
 
   popupWin = new BrowserWindow({
-    x: winLeft,
-    y: winTop,
+    x: Math.round(winLeft),
+    y: Math.round(winTop),
     width: POPUP_W,
     height: POPUP_H,
     frame: false,
@@ -194,14 +191,11 @@ function createPopupWindow({ word = '', definition = '', examples = [], synonyms
 
   popupWin.loadFile(path.join(__dirname, 'renderer', 'popup.html'));
 
-  // Capture webContents immediately — popupWin may be null by the time
-  // 'did-finish-load' fires if a rapid second trigger closed it first.
-  const wc = popupWin.webContents;
+const wc = popupWin.webContents;
   wc.once('did-finish-load', () => {
     if (!popupWin || popupWin.isDestroyed()) return;
 
-    // Send word data to renderer
-    wc.send('word-data', {
+  wc.send('word-data', {
       word,
       phonetic:    '',
       pos:         '',
@@ -211,28 +205,25 @@ function createPopupWindow({ word = '', definition = '', examples = [], synonyms
       wikiSummary: wikiSummary || '',
       wikiUrl:     wikiUrl     || '',
       tailX,
-      tailDir,
+      tailDir:     'down',     // we always show tail pointing up now
     });
 
-    // Register blur AFTER page is fully loaded and data is sent.
-    // Registering it earlier causes page-load focus events to prematurely
-    // destroy the popup, making it appear stuck or at the wrong position
-    // on a subsequent retry.
-    popupWin.on('blur', () => {
+  popupWin.on('blur', () => {
       if (popupWin && !popupWin.isDestroyed()) {
         popupWin.destroy();
         popupWin = null;
       }
     });
 
-    // Focus the popup so blur fires when user clicks elsewhere.
-    // Called after load so Windows grants focus reliably.
-    popupWin.focus();
+  popupWin.focus();
   });
 
-  // Auto-close after 8s as safety net (covers cases where blur doesn't fire)
+  // Auto-close after 8s
   const autoClose = setTimeout(() => {
-    if (popupWin && !popupWin.isDestroyed()) { popupWin.destroy(); popupWin = null; }
+    if (popupWin && !popupWin.isDestroyed()) { 
+      popupWin.destroy(); 
+      popupWin = null; 
+    }
   }, 8000);
 
   popupWin.once('closed', () => {
