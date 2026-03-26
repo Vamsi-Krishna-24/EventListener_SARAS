@@ -160,14 +160,24 @@ let cursor;
     scaleFactor: display.scaleFactor
   });
 
-  // Simple, reliable positioning: always appear slightly BELOW the click point
-  // This works much better with mixed scaling and avoids tailDir complexity
+  // Decide whether popup goes BELOW or ABOVE the click point
+  const spaceBelow = (bounds.y + bounds.height) - cursor.y;
+  const spaceAbove = cursor.y - bounds.y;
+  const tailDir = spaceBelow >= (POPUP_H + 30) ? 'up' : 'down';
+  // tailDir 'up' means the tail points UP (popup is below the word)
+  // tailDir 'down' means the tail points DOWN (popup is above the word)
+
   let winLeft = cursor.x - (POPUP_W / 2);
-  let winTop  = cursor.y + 26;        // ← Sweet spot for most users on 125% scaling
+  let winTop;
+  if (tailDir === 'up') {
+    winTop = cursor.y + 20;       // popup below the word
+  } else {
+    winTop = cursor.y - POPUP_H - 20;  // popup above the word
+  }
 
   // Clamp to screen bounds with small padding
   winLeft = Math.max(bounds.x + 12, Math.min(winLeft, bounds.x + bounds.width - POPUP_W - 12));
-  winTop  = Math.max(bounds.y + 12, Math.min(winTop, bounds.y + bounds.height - POPUP_H - 30));
+  winTop  = Math.max(bounds.y + 12, Math.min(winTop, bounds.y + bounds.height - POPUP_H - 12));
 
   const tailX = cursor.x - winLeft;
 
@@ -205,7 +215,7 @@ const wc = popupWin.webContents;
       wikiSummary: wikiSummary || '',
       wikiUrl:     wikiUrl     || '',
       tailX,
-      tailDir:     'down',     // we always show tail pointing up now
+      tailDir,
     });
 
   popupWin.on('blur', () => {
