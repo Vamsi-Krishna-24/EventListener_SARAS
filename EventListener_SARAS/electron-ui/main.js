@@ -2,6 +2,14 @@ const { app, BrowserWindow, ipcMain, shell, Menu, screen } = require('electron')
 const path = require('path');
 const http = require('http');
 const { spawn } = require('child_process');
+const { autoUpdater } = require('electron-updater');
+const log = require('electron-log');
+
+// ───────────────────────────────────────────────
+// AUTO-UPDATE LOGGER
+// ───────────────────────────────────────────────
+autoUpdater.logger = log;
+autoUpdater.logger.transports.file.level = 'info';
 
 let mainWindow;
 let popupServer;
@@ -137,7 +145,7 @@ function createPopupWindow({ word = '', definition = '', examples = [], synonyms
     popupWin = null;
   }
 
-let cursor;
+  let cursor;
   if (clickX !== null && clickY !== null) {
     // pynput sends physical-pixel coordinates; convert to Electron's
     // logical/DIP space so the popup lands on the correct spot,
@@ -201,11 +209,11 @@ let cursor;
 
   popupWin.loadFile(path.join(__dirname, 'renderer', 'popup.html'));
 
-const wc = popupWin.webContents;
+  const wc = popupWin.webContents;
   wc.once('did-finish-load', () => {
     if (!popupWin || popupWin.isDestroyed()) return;
 
-  wc.send('word-data', {
+    wc.send('word-data', {
       word,
       phonetic:    '',
       pos:         '',
@@ -218,21 +226,21 @@ const wc = popupWin.webContents;
       tailDir,
     });
 
-  popupWin.on('blur', () => {
+    popupWin.on('blur', () => {
       if (popupWin && !popupWin.isDestroyed()) {
         popupWin.destroy();
         popupWin = null;
       }
     });
 
-  popupWin.focus();
+    popupWin.focus();
   });
 
   // Auto-close after 8s
   const autoClose = setTimeout(() => {
-    if (popupWin && !popupWin.isDestroyed()) { 
-      popupWin.destroy(); 
-      popupWin = null; 
+    if (popupWin && !popupWin.isDestroyed()) {
+      popupWin.destroy();
+      popupWin = null;
     }
   }, 8000);
 
@@ -368,6 +376,27 @@ function quitApp() {
 }
 
 // ───────────────────────────────────────────────
+// AUTO-UPDATE
+// ───────────────────────────────────────────────
+autoUpdater.on('update-available', (info) => {
+  log.info('[SARAS] Update available:', info.version);
+  if (mainWindow) {
+    mainWindow.webContents.send('update-downloading', info.version);
+  }
+});
+
+autoUpdater.on('update-downloaded', (info) => {
+  log.info('[SARAS] Update downloaded:', info.version);
+  if (mainWindow) {
+    mainWindow.webContents.send('update-ready', info.version);
+  }
+});
+
+autoUpdater.on('error', (err) => {
+  log.error('[SARAS] Auto-update error:', err);
+});
+
+// ───────────────────────────────────────────────
 // APP LIFECYCLE
 // ───────────────────────────────────────────────
 app.whenReady().then(() => {
@@ -375,6 +404,11 @@ app.whenReady().then(() => {
   createWindow();
   createTray();
   startPopupServer();
+
+  // Only check for updates in packaged builds (not during npm start)
+  if (app.isPackaged) {
+    autoUpdater.checkForUpdatesAndNotify();
+  }
 });
 
 app.on('window-all-closed', () => { /* tray keeps it alive */ });
@@ -437,4 +471,9 @@ ipcMain.on('open-in-saras', (_e, word) => {
   }
 
   if (popupWin && !popupWin.isDestroyed()) { popupWin.destroy(); popupWin = null; }
+});
+
+// Restart & install update (triggered from renderer update banner)
+ipcMain.on('restart-and-install', () => {
+  autoUpdater.quitAndInstall();
 });
