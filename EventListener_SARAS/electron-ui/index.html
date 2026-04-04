@@ -927,7 +927,7 @@
             <p class="support-desc">Support and feedback — greetings are welcome any time, 24×7. We are here to help. Reach out to us at any time, and we will get back to you as soon as possible.</p>
             <div class="support-email-display">
               <span>→</span>
-              <span><a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="402538212d302c2500252d21292c6e232f2d">[email&#160;protected]</a></span>
+              <span>support@getsaras.com</span>
             </div>
             <div class="support-action-row">
               <button class="btn-primary" onclick="sendEmail()">Send Email</button>
@@ -945,7 +945,7 @@
             <p class="support-desc">Your thoughts will help us improve the app. We read every single message — for sure. Even a short note goes a long way.</p>
             <div class="support-action-row">
               <button class="btn-primary" onclick="openForm()">Open Form</button>
-              <button class="btn-outline" onclick="openForm()">Share Feedback</button>
+              <button class="btn-outline" onclick="shareFeedback()">Share Feedback</button>
             </div>
           </div>
         </div>
@@ -970,7 +970,7 @@
               <br><br>
               If you read a lot — papers, articles, books, anything — SARAS will quietly become one of your most-used tools.
             </p>
-            <p class="about-contact">Questions? Write to <a href="#" onclick="sendEmail(); return false;"><span class="__cf_email__" data-cfemail="adc8d5ccc0ddc1c8edc8c0ccc4c183cec2c0">[email&#160;protected]</span></a></p>
+            <p class="about-contact">Questions? Write to <a href="#" onclick="sendEmail(); return false;">support@getsaras.com</a>
           </div>
         </div>
 
@@ -1165,11 +1165,15 @@ function renderResult(data) {
 
 // ── Support actions ──────────────────────────────────────────
 function sendEmail() {
-  shell.openExternal('mailto:udhyog@saras.app?subject=SARAS%20Support');
+  shell.openExternal('mailto:support@getsaras.com?subject=SARAS%20Support');
 }
 
 function openForm() {
-  shell.openExternal('https://forms.google.com');
+  shell.openExternal('https://docs.google.com/forms/d/e/1FAIpQLSfGi8cfUpx49N9bsMBlUIcGo3NyUkPTS6yZpvRXRHlZrbJSFA/viewform');
+}
+
+function shareFeedback() {
+  shell.openExternal('https://getsaras.com/Share-feedback');
 }
 
 // ── Auto-update handlers ─────────────────────────────────────
