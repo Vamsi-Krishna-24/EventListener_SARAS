@@ -17,7 +17,7 @@ This project is licensed under the MIT License — see the [LICENSE](LICENSE) fi
 ## Code Signing Policy
 Free code signing provided by SignPath.io, certificate by SignPath Foundation.
 
-- **Approvers:** [Owners](https://github.com/orgs/Vamsi-Krishna-24/people?query=role%3Aowner)
+- **Approvers:** [Vamsi-Krishna-24](https://github.com/Vamsi-Krishna-24)
 - **Committers and reviewers:** [Vamsi-Krishna-24](https://github.com/Vamsi-Krishna-24)
 
 Privacy policy: This program will not transfer any information to other networked systems unless specifically requested by the user. Full privacy policy at [getsaras.com/privacy](https://getsaras.com/privacy).
