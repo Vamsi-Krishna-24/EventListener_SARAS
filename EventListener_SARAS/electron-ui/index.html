@@ -18,6 +18,66 @@
 
   * { margin: 0; padding: 0; box-sizing: border-box; }
 
+  /* ── UPDATE BANNER ── */
+  .update-banner {
+    display: none;
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 9999;
+    background: var(--ink);
+    color: var(--white);
+    border-radius: 10px;
+    padding: 14px 18px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+    max-width: 320px;
+    font-family: 'Outfit', sans-serif;
+    animation: slideUp 0.3s cubic-bezier(0.34,1.45,0.64,1);
+  }
+  .update-banner.visible { display: block; }
+  @keyframes slideUp {
+    from { opacity: 0; transform: translateY(16px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .update-banner-title {
+    font-size: 0.82rem;
+    font-weight: 500;
+    letter-spacing: 0.05em;
+    margin-bottom: 4px;
+    color: var(--gold);
+  }
+  .update-banner-msg {
+    font-size: 0.78rem;
+    color: rgba(255,255,255,0.7);
+    margin-bottom: 12px;
+    line-height: 1.5;
+  }
+  .update-banner-actions { display: flex; gap: 8px; }
+  .update-btn-restart {
+    flex: 1;
+    padding: 7px 0;
+    background: var(--gold);
+    color: var(--ink);
+    border: none;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: opacity 0.15s;
+  }
+  .update-btn-restart:hover { opacity: 0.85; }
+  .update-btn-later {
+    padding: 7px 12px;
+    background: transparent;
+    color: rgba(255,255,255,0.5);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 6px;
+    font-size: 0.78rem;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .update-btn-later:hover { color: var(--white); border-color: rgba(255,255,255,0.3); }
+
   body {
     font-family: 'Outfit', sans-serif;
     background: var(--off);
@@ -651,6 +711,23 @@
     text-transform: uppercase;
   }
 
+  /* ── HOME GREETING ── */
+  .home-greeting {
+    font-size: 0.72rem;
+    font-weight: 400;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--gold);
+    margin-bottom: 14px;
+    min-height: 16px;
+    opacity: 0;
+    animation: greetIn 0.7s 0.15s cubic-bezier(0.22,1,0.36,1) forwards;
+  }
+  @keyframes greetIn {
+    from { opacity: 0; transform: translateY(5px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
   /* Scrollbar */
   ::-webkit-scrollbar { width: 6px; }
   ::-webkit-scrollbar-track { background: transparent; }
@@ -745,6 +822,7 @@
 
     <!-- HOME PANEL -->
     <div class="panel active" id="panel-home">
+      <p id="home-greeting" class="home-greeting"></p>
       <div class="panel-eyebrow">Dictionary</div>
       <h1 class="panel-title">Look Up a Word</h1>
       <p class="panel-subtitle">Type or paste any word to get its definition instantly.</p>
@@ -849,7 +927,7 @@
             <p class="support-desc">Support and feedback — greetings are welcome any time, 24×7. We are here to help. Reach out to us at any time, and we will get back to you as soon as possible.</p>
             <div class="support-email-display">
               <span>→</span>
-              <span><a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="402538212d302c2500252d21292c6e232f2d">[email&#160;protected]</a></span>
+              <span>support@getsaras.com</span>
             </div>
             <div class="support-action-row">
               <button class="btn-primary" onclick="sendEmail()">Send Email</button>
@@ -867,7 +945,7 @@
             <p class="support-desc">Your thoughts will help us improve the app. We read every single message — for sure. Even a short note goes a long way.</p>
             <div class="support-action-row">
               <button class="btn-primary" onclick="openForm()">Open Form</button>
-              <button class="btn-outline" onclick="openForm()">Share Feedback</button>
+              <button class="btn-outline" onclick="shareFeedback()">Share Feedback</button>
             </div>
           </div>
         </div>
@@ -892,7 +970,7 @@
               <br><br>
               If you read a lot — papers, articles, books, anything — SARAS will quietly become one of your most-used tools.
             </p>
-            <p class="about-contact">Questions? Write to <a href="#" onclick="sendEmail(); return false;"><span class="__cf_email__" data-cfemail="adc8d5ccc0ddc1c8edc8c0ccc4c183cec2c0">[email&#160;protected]</span></a></p>
+            <p class="about-contact">Questions? Write to <a href="#" onclick="sendEmail(); return false;">support@getsaras.com</a>
           </div>
         </div>
 
@@ -909,6 +987,16 @@
     </div>
 
   </main>
+</div>
+
+<!-- UPDATE BANNER -->
+<div class="update-banner" id="updateBanner">
+  <div class="update-banner-title">⬆ UPDATE READY</div>
+  <div class="update-banner-msg" id="updateBannerMsg">A new version has been downloaded. Restart to apply.</div>
+  <div class="update-banner-actions">
+    <button class="update-btn-restart" onclick="restartAndInstall()">Restart Now</button>
+    <button class="update-btn-later" onclick="dismissUpdate()">Later</button>
+  </div>
 </div>
 
 <script>
@@ -1077,12 +1165,76 @@ function renderResult(data) {
 
 // ── Support actions ──────────────────────────────────────────
 function sendEmail() {
-  shell.openExternal('mailto:udhyog@saras.app?subject=SARAS%20Support');
+  shell.openExternal('mailto:support@getsaras.com?subject=SARAS%20Support');
 }
 
 function openForm() {
-  shell.openExternal('https://forms.google.com');
+  shell.openExternal('https://docs.google.com/forms/d/e/1FAIpQLSfGi8cfUpx49N9bsMBlUIcGo3NyUkPTS6yZpvRXRHlZrbJSFA/viewform');
 }
+
+function shareFeedback() {
+  shell.openExternal('https://getsaras.com/Share-feedback');
+}
+
+// ── Auto-update handlers ─────────────────────────────────────
+ipcRenderer.on('update-downloading', (_e, version) => {
+  // Silently downloading — optionally show a subtle tray tooltip or log
+  console.log(`[UPDATE] Downloading v${version} in background...`);
+});
+
+ipcRenderer.on('update-ready', (_e, version) => {
+  document.getElementById('updateBannerMsg').textContent =
+    `v${version} has been downloaded. Restart SARAS to apply the update.`;
+  document.getElementById('updateBanner').classList.add('visible');
+});
+
+function restartAndInstall() {
+  ipcRenderer.send('restart-and-install');
+}
+
+function dismissUpdate() {
+  document.getElementById('updateBanner').classList.remove('visible');
+}
+
+// ── "Open in Saras" from popup ───────────────────────────────
+ipcRenderer.on('open-word', (_e, word) => {
+  showPanel('home');
+  const input = document.getElementById('searchInput');
+  input.value = word;
+  lookupWord();
+});
+
+// ── Personalised greeting ────────────────────────────────────
+async function loadGreeting() {
+  try {
+    const res  = await fetch(`${API}/check-activation`);
+    const data = await res.json();
+    if (!data.activated) return;
+
+    const name = data.first_name;
+    const day  = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][new Date().getDay()];
+    const hour = new Date().getHours();
+    const time = hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : 'evening';
+
+    const pool = [
+      `Happy ${day}, ${name}!`,
+      `Good ${time}, ${name}!`,
+      `Welcome back, ${name}!`,
+      `${name} returns — let's get learning.`,
+      `Ready for today, ${name}?`,
+      `Let's start SARAS, ${name}!`,
+      `Hi ${name}, good to see you.`,
+    ];
+
+    // Rotates daily — stable within a session
+    const greeting = pool[new Date().getDate() % pool.length];
+    document.getElementById('home-greeting').textContent = greeting;
+  } catch (e) {
+    // Backend not ready yet — silently skip, greeting stays empty
+  }
+}
+
+loadGreeting();
 </script>
 </body>
 </html>

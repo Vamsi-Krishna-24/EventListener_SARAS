@@ -1,11 +1,25 @@
 # listener1.py
 # SARAS event listener
 
+# ── NOTE: Do NOT set DPI-awareness in this process. ──────────────────
+# Keeping Python DPI-unaware means GetCursorPos (used by pynput and by
+# our explicit ctypes call in saras_app.py) returns virtualised logical
+# coordinates — the same space Electron uses for BrowserWindow placement.
+# Any SetProcessDpiAwareness / SetProcessDPIAware call would switch
+# GetCursorPos to physical pixels and break popup positioning on scaled
+# displays.
+# ─────────────────────────────────────────────────────────────────────
+    
 import time
 import threading
 import queue
 import pyperclip
 from pynput import mouse, keyboard
+
+
+#Note:
+# pynput captures the click position immediately at click time.
+# Electron should normalize these coordinates before positioning the popup.
 
 
 class ListenerController:
@@ -26,6 +40,7 @@ class ListenerController:
 
         self._last_click_time = None
         self._press_time      = None
+        self._press_xy        = None
 
         self._stop_flag = threading.Event()
         self._lock      = threading.Lock()
@@ -54,8 +69,7 @@ class ListenerController:
         if mode not in ("double_click", "long_press"):
             print(f"[WARN] Unknown trigger mode: {mode}")
             return
-        self.trigger_mode  = mode
-        # reset state so no phantom presses carry over
+        self.trigger_mode     = mode
         self._last_click_time = None
         self._press_time      = None
         print(f"[INFO] Trigger mode → {mode}")
@@ -67,74 +81,75 @@ class ListenerController:
     # MAIN CLICK HANDLER
     # ------------------------------------------------
 
+# x, y are captured synchronously at click time.
+# On Windows with mixed display scaling, Electron will normalize them.
     def _on_click(self, x, y, button, pressed):
-
         if button != mouse.Button.left:
             return
-
         if self._stop_flag.is_set():
             return
-
+        # x, y are captured synchronously by pynput at the exact moment
+        # of the click — they are already in Electron-compatible logical
+        # pixel coordinates on a default DPI-unaware Python process.
         if self.trigger_mode == "double_click":
-            self._handle_double_click(pressed)
-
+            self._handle_double_click(pressed, x, y)
         elif self.trigger_mode == "long_press":
-            self._handle_long_press(pressed)
+            self._handle_long_press(pressed, x, y)
 
     # ------------------------------------------------
     # DOUBLE CLICK
     # ------------------------------------------------
 
-    def _handle_double_click(self, pressed):
-
+    def _handle_double_click(self, pressed, x, y):
         if pressed:
             return
 
         current_time = time.time()
-
         with self._lock:
             last = self._last_click_time
             self._last_click_time = current_time
 
         if last and (current_time - last) < self.DOUBLE_CLICK_THRESHOLD:
-            self._capture_word()
+            # Spin off immediately — listener thread must never block
+            threading.Thread(
+                target=self._capture_word,
+                args=(x, y),
+                daemon=True
+            ).start()
 
     # ------------------------------------------------
     # LONG PRESS
     # ------------------------------------------------
 
-    def _handle_long_press(self, pressed):
-
+    def _handle_long_press(self, pressed, x, y):
         if pressed:
             self._press_time = time.time()
-
+            self._press_xy   = (x, y)
         else:
             if not self._press_time:
                 return
 
-            duration = time.time() - self._press_time
+            duration         = time.time() - self._press_time
+            click_x, click_y = self._press_xy or (x, y)
             self._press_time = None
+            self._press_xy   = None
 
             if duration >= self.LONG_PRESS_THRESHOLD:
                 print(f"[LOG] Long press detected ({duration:.2f}s)")
+                threading.Thread(
+                    target=self._long_press_capture,
+                    args=(click_x, click_y),
+                    daemon=True
+                ).start()
 
-                # Run capture in a thread so we don't block the listener callback.
-                # If we block here, the simulated double-click fires its own
-                # on_click callbacks back into this same method — causing a loop.
-                threading.Thread(target=self._long_press_capture, daemon=True).start()
-
-    def _long_press_capture(self):
+    def _long_press_capture(self, x, y):
         """Runs off the listener thread to avoid re-entrant on_click calls."""
-        # Briefly pause the listener so the simulated double-click
-        # doesn't trigger another long press detection
         self._stop_flag.set()
-
         try:
             self._mouse.click(mouse.Button.left, 2)
             time.sleep(0.08)
-            self._capture_word()
+            self._capture_word(x, y)
         finally:
-            # Re-arm the listener
             self._stop_flag.clear()
 
     # ------------------------------------------------
@@ -147,8 +162,9 @@ class ListenerController:
         self._kbd.release('c')
         self._kbd.release(keyboard.Key.ctrl)
 
-    def _capture_word(self):
-
+    def _capture_word(self, x, y):
+        # x, y are the logical coords captured synchronously at click time —
+        # use them directly, no conversion or HTTP fetch needed.
         self._simulate_ctrl_c()
         time.sleep(self.CLIPBOARD_WAIT)
 
@@ -157,10 +173,9 @@ class ListenerController:
         if not text:
             print("[LOG] Clipboard empty")
             return
-
         if len(text.split()) > 5:
             print("[LOG] Too many words, ignoring")
             return
 
         print(f"[LOG] Word captured: {text}")
-        self.word_queue.put(text)
+        self.word_queue.put((text, x, y))

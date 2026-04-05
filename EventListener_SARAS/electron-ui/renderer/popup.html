@@ -366,7 +366,7 @@
     document.getElementById('wiki-title').textContent    = data.word         || '';
     document.getElementById('wiki-body').textContent     = data.wikiSummary  || 'No Wikipedia summary available.';
 
-    if (data.wikiUrl) document.getElementById('wiki-more').href = data.wikiUrl;
+    if (data.wikiUrl) { document.getElementById('wiki-more').dataset.url = data.wikiUrl; }
 
     document.getElementById('dict-example-row').style.display =
       data.example ? 'flex' : 'none';
@@ -417,17 +417,25 @@
         data.wikiSummary || 'No Wikipedia summary available.';
       if (data.wikiUrl) {
         const link = document.getElementById('wiki-more');
-        link.href = data.wikiUrl;
+        link.dataset.url = data.wikiUrl;
         link.style.display = 'block';
       }
     });
   }
 
+  // Open in Saras — show main window
   document.getElementById('open-in-saras-btn').addEventListener('click', () => {
     const word = document.getElementById('chip-word').textContent;
     if (window.sarasAPI) window.sarasAPI.openInSaras(word);
   });
-  
+
+  // Wikipedia link — open in system browser
+  document.getElementById('wiki-more').addEventListener('click', (e) => {
+    e.preventDefault();
+    const url = e.currentTarget.dataset.url;
+    if (url && window.sarasAPI) window.sarasAPI.openExternal(url);
+  });
+
 </script>
 </body>
 </html>
