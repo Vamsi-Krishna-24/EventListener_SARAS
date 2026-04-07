@@ -199,6 +199,7 @@ function createPopupWindow({ word = '', definition = '', examples = [], synonyms
     alwaysOnTop: true,
     resizable: false,
     skipTaskbar: true,
+    show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -226,14 +227,35 @@ function createPopupWindow({ word = '', definition = '', examples = [], synonyms
       tailDir,
     });
 
+    // Measure actual content height, resize/reposition, THEN show.
+    // This prevents the visible "jump" for tail-down popups.
+    setTimeout(async () => {
+      if (!popupWin || popupWin.isDestroyed()) return;
+      try {
+        const actualH = await wc.executeJavaScript(
+          `document.querySelector('.popover-wrap').offsetHeight`
+        );
+        if (actualH && actualH < POPUP_H) {
+          const [curX, curY] = popupWin.getPosition();
+          popupWin.setSize(POPUP_W, actualH);
+          if (tailDir === 'down') {
+            const newY = curY + (POPUP_H - actualH);
+            popupWin.setPosition(curX, newY);
+          }
+        }
+      } catch (_) {}
+
+      if (!popupWin || popupWin.isDestroyed()) return;
+      popupWin.showInactive();
+      popupWin.focus();
+    }, 80);
+
     popupWin.on('blur', () => {
       if (popupWin && !popupWin.isDestroyed()) {
         popupWin.destroy();
         popupWin = null;
       }
     });
-
-    popupWin.focus();
   });
 
   // Auto-close after 8s
