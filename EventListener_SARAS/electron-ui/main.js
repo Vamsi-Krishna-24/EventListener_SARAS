@@ -58,6 +58,33 @@ const POPUP_W = 340;
 const POPUP_H = 430;
 
 // ───────────────────────────────────────────────
+// POPUP CACHE WARM-UP
+// ───────────────────────────────────────────────
+// Load popup.html once at startup in a throwaway hidden window.
+// This primes Electron's file/render cache so subsequent
+// createPopupWindow() calls skip cold-read from disk (~50-100ms saved).
+function warmPopupCache() {
+  const warmWin = new BrowserWindow({
+    x: -9999, y: -9999,
+    width: POPUP_W, height: POPUP_H,
+    show: false,
+    skipTaskbar: true,
+    frame: false,
+    transparent: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  warmWin.loadFile(path.join(__dirname, 'renderer', 'popup.html'));
+  warmWin.webContents.once('did-finish-load', () => {
+    warmWin.destroy();
+    console.log('[SARAS] Popup cache warmed');
+  });
+}
+
+// ───────────────────────────────────────────────
 // MAIN WINDOW
 // ───────────────────────────────────────────────
 function createWindow() {
@@ -135,9 +162,9 @@ function loadStartPage(attempt = 0) {
 // POPUP WINDOW
 // ───────────────────────────────────────────────
 function createPopupWindow({ word = '', definition = '', examples = [], synonyms = [], wikiSummary = '', wikiUrl = '', clickX = null, clickY = null }) {
-  // Debounce: ignore rapid-fire calls within 700ms
+  // Debounce: ignore rapid-fire calls within 400ms
   const now = Date.now();
-  if (now - lastPopupTime < 700) return;
+  if (now - lastPopupTime < 400) return;
   lastPopupTime = now;
 
   if (popupWin) {
@@ -228,13 +255,17 @@ function createPopupWindow({ word = '', definition = '', examples = [], synonyms
     });
 
     // Measure actual content height, resize/reposition, THEN show.
-    // This prevents the visible "jump" for tail-down popups.
-    setTimeout(async () => {
+    // Uses rAF inside the renderer (~16ms) instead of fixed 80ms delay.
+    wc.executeJavaScript(`
+      new Promise(resolve => {
+        requestAnimationFrame(() => {
+          const el = document.querySelector('.popover-wrap');
+          resolve(el ? el.offsetHeight : 0);
+        });
+      });
+    `).then(actualH => {
       if (!popupWin || popupWin.isDestroyed()) return;
       try {
-        const actualH = await wc.executeJavaScript(
-          `document.querySelector('.popover-wrap').offsetHeight`
-        );
         if (actualH && actualH < POPUP_H) {
           const [curX, curY] = popupWin.getPosition();
           popupWin.setSize(POPUP_W, actualH);
@@ -246,9 +277,12 @@ function createPopupWindow({ word = '', definition = '', examples = [], synonyms
       } catch (_) {}
 
       if (!popupWin || popupWin.isDestroyed()) return;
-      popupWin.showInactive();
-      popupWin.focus();
-    }, 80);
+      popupWin.show();
+    }).catch(() => {
+      // Fallback: show at full size if measurement fails
+      if (!popupWin || popupWin.isDestroyed()) return;
+      popupWin.show();
+    });
 
     popupWin.on('blur', () => {
       if (popupWin && !popupWin.isDestroyed()) {
@@ -325,6 +359,33 @@ function startPopupServer() {
               wikiSummary: data.wikiSummary || '',
               wikiUrl:     data.wikiUrl     || '',
               word:        data.word        || '',
+            });
+          }
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: true }));
+        } catch (e) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'invalid JSON' }));
+        }
+      });
+      return;
+    }
+
+    // ── POST /update-definition ──────────────────────────────────────────────
+    // Pushes real definition data to an already-open popup that was
+    // initially shown with "Looking up…" (DB miss → API fetch pattern).
+    if (req.method === 'POST' && req.url === '/update-definition') {
+      let body = '';
+      req.on('data', chunk => { body += chunk; });
+      req.on('end', () => {
+        try {
+          const data = JSON.parse(body);
+          if (popupWin && !popupWin.isDestroyed()) {
+            popupWin.webContents.send('definition-update', {
+              word:       data.word       || '',
+              definition: data.definition || '',
+              examples:   data.examples   || [],
+              synonyms:   data.synonyms   || [],
             });
           }
           res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -426,6 +487,7 @@ app.whenReady().then(() => {
   createWindow();
   createTray();
   startPopupServer();
+  warmPopupCache();    // Prime Electron's cache for faster popup creation
 
   // Only check for updates in packaged builds (not during npm start)
   if (app.isPackaged) {

@@ -180,18 +180,27 @@ word_queue = queue.Queue()
 
 ELECTRON_POPUP_URL = "http://127.0.0.1:5001/show-popup"
 
+# ── Persistent HTTP client — reuses TCP connection to Electron ──
+# Avoids ~40-50ms TCP handshake on every popup trigger.
+# Keep-alive keeps the socket warm between requests.
+_electron_client = httpx.Client(
+    base_url="http://127.0.0.1:5001",
+    timeout=3,
+    limits=httpx.Limits(max_keepalive_connections=1, max_connections=2),
+)
+
 
 def _post_to_electron(payload: dict):
     """
     Fire-and-forget POST to Electron's popup server.
     Runs in a daemon thread so it never blocks the Qt main thread.
     Silently ignores connection errors (Electron may not be ready yet).
+    Uses persistent client to skip TCP handshake.
     """
     try:
-        with httpx.Client(timeout=3) as client:
-            r = client.post(ELECTRON_POPUP_URL, json=payload)
-            if r.status_code != 200:
-                print(f"[POPUP] Electron returned {r.status_code}", flush=True)
+        r = _electron_client.post("/show-popup", json=payload)
+        if r.status_code != 200:
+            print(f"[POPUP] Electron returned {r.status_code}", flush=True)
     except Exception as e:
         print(f"[POPUP] Could not reach Electron popup server: {e}", flush=True)
 
@@ -264,34 +273,74 @@ ELECTRON_WIKI_URL = "http://127.0.0.1:5001/update-wiki"
 def _post_wiki_update(word: str, wiki_summary: str, wiki_url: str):
     """POST just the Wikipedia data to the already-open popup."""
     try:
-        with httpx.Client(timeout=3) as client:
-            r = client.post(ELECTRON_WIKI_URL, json={
-                "word":        word,
-                "wikiSummary": wiki_summary,
-                "wikiUrl":     wiki_url,
-            })
-            print(f"[WIKI] update sent for '{word}' → {r.status_code}", flush=True)
+        r = _electron_client.post("/update-wiki", json={
+            "word":        word,
+            "wikiSummary": wiki_summary,
+            "wikiUrl":     wiki_url,
+        })
+        print(f"[WIKI] update sent for '{word}' → {r.status_code}", flush=True)
     except Exception as e:
         print(f"[WIKI] update post failed for '{word}': {e}", flush=True)
+
+
+def _post_definition_update(word: str, definition: str, examples: list, synonyms: list):
+    """POST the real definition to an already-open popup (after API lookup)."""
+    try:
+        r = _electron_client.post("/update-definition", json={
+            "word":       word,
+            "definition": definition,
+            "examples":   examples,
+            "synonyms":   synonyms,
+        })
+        print(f"[DICT] definition update sent for '{word}' → {r.status_code}", flush=True)
+    except Exception as e:
+        print(f"[DICT] definition update failed for '{word}': {e}", flush=True)
 
 
 def _build_and_post(word: str, result: dict | None, click_x: int, click_y: int):
     """
     Called in a background thread.
-    Step 1 — POST dict data immediately so popup appears instantly.
-    Step 2 — Fetch Wikipedia, then POST /update-wiki to fill the wiki tab.
+    Step 1 — POST popup immediately (with data if DB hit, or loading state if miss).
+    Step 2 — If DB miss, fetch from dictionaryapi.dev and push update.
+    Step 3 — Fetch Wikipedia and push update to fill the wiki tab.
     """
-    definition = ""
-    examples: list = []
-    synonyms: list = []
+    display_word = result.get("word", word) if result else word
 
     if result:
-        # ── Local DB hit ─────────────────────────
+        # ── Local DB hit — send full data immediately ────────────
         definition = result.get("definition", "")
         examples   = result.get("examples",   [])
         synonyms   = result.get("synonyms",   [])
+
+        _post_to_electron({
+            "word":        display_word,
+            "definition":  definition or "No definition found.",
+            "examples":    examples,
+            "synonyms":    synonyms,
+            "wikiSummary": "",
+            "wikiUrl":     "",
+            "clickX":      click_x,
+            "clickY":      click_y,
+        })
+        print(f"[DICT] popup opened for '{display_word}' (DB hit)", flush=True)
     else:
-        # ── DB miss → try dictionaryapi.dev ──────
+        # ── DB miss — show popup instantly with loading state ────
+        _post_to_electron({
+            "word":        display_word,
+            "definition":  "Looking up…",
+            "examples":    [],
+            "synonyms":    [],
+            "wikiSummary": "",
+            "wikiUrl":     "",
+            "clickX":      click_x,
+            "clickY":      click_y,
+        })
+        print(f"[DICT] popup opened for '{display_word}' (loading…)", flush=True)
+
+        # ── Now fetch the real definition and push update ────────
+        definition = ""
+        examples: list = []
+        synonyms: list = []
         try:
             r = httpx.get(
                 f"https://api.dictionaryapi.dev/api/v2/entries/en/{word}",
@@ -311,23 +360,17 @@ def _build_and_post(word: str, result: dict | None, click_x: int, click_y: int):
         except Exception as e:
             print(f"[DICT] dictionaryapi.dev failed for '{word}': {e}", flush=True)
 
-    display_word = result.get("word", word) if result else word
+        # Push real definition to the already-visible popup
+        _post_definition_update(
+            display_word,
+            definition or "No definition found.",
+            examples,
+            synonyms,
+        )
 
-    # ── Step 1: send dict data immediately — popup opens right away ──────
-    _post_to_electron({
-        "word":        display_word,
-        "definition":  definition or "No definition found.",
-        "examples":    examples,
-        "synonyms":    synonyms,
-        "wikiSummary": "",
-        "wikiUrl":     "",
-        "clickX":      click_x,
-        "clickY":      click_y,
-    })
-    print(f"[DICT] popup opened for '{display_word}'", flush=True)
     print(f"[COORD DEBUG] word='{display_word}' clickX={click_x} clickY={click_y}", flush=True)
 
-    # ── Step 2: fetch Wikipedia and push update to the open popup ────────
+    # ── Fetch Wikipedia and push update to the open popup ────────
     print(f"[WIKI] fetching for '{word}'...", flush=True)
     wiki_summary, wiki_url = _fetch_wiki(word)
     print(f"[WIKI] result for '{word}': summary={wiki_summary[:60] if wiki_summary else 'EMPTY'}", flush=True)
@@ -336,8 +379,7 @@ def _build_and_post(word: str, result: dict | None, click_x: int, click_y: int):
 
 
 def process_queue():
-    """Called every 100 ms by QTimer on the Qt main thread."""
-    global _last_popup_word, _last_popup_time
+    """Called every 50 ms by QTimer on the Qt main thread."""
 
     # Drain the whole queue, act only on the latest item
     items = []
@@ -356,12 +398,8 @@ def process_queue():
     word, click_x, click_y = items[-1]
     word = word.strip().lower()
 
-    # Cooldown: skip if the same word fired recently
-    now = time.monotonic()
-    if word == _last_popup_word and (now - _last_popup_time) < POPUP_COOLDOWN_S:
-        return
-    _last_popup_word = word
-    _last_popup_time = now
+    # No same-word cooldown — every trigger should show the popup.
+    # The Electron-side debounce (400ms) prevents true rapid-fire dupes.
 
     result = get_word_meaning(word)
 
@@ -686,7 +724,7 @@ def main():
     # ── Queue processor (popup timer) ───────────
     queue_timer = QTimer()
     queue_timer.timeout.connect(process_queue)
-    queue_timer.start(100)
+    queue_timer.start(50)    # 50ms poll — avg 25ms faster response
 
     # ── Tray check timer — creates tray on Qt thread after activation ──
     def _check_tray_needed():
