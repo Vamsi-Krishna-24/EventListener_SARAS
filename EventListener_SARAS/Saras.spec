@@ -1,11 +1,22 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+from PyInstaller.utils.hooks import collect_submodules, collect_data_files
+
+# Collect all of comtypes including the pre-generated UIA bindings in comtypes/gen/
+comtypes_hidden = collect_submodules('comtypes')
+comtypes_datas  = collect_data_files('comtypes')
+
 a = Analysis(
     ['saras_app.py'],
     pathex=[],
     binaries=[],
-    datas=[('Dictionary.db', '.'), ('lotus_running_green.ico', '.'), ('lotus_sleeping_red.ico', '.'), ('lotus_coin_v2.ico', '.')],
-    hiddenimports=[],
+    datas=[
+        ('Dictionary.db',            '.'),
+        ('lotus_running_green.ico',  '.'),
+        ('lotus_sleeping_red.ico',   '.'),
+        ('lotus_coin_v2.ico',        '.'),
+    ] + comtypes_datas,
+    hiddenimports=comtypes_hidden,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
