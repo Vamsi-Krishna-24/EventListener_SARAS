@@ -411,6 +411,27 @@
   if (window.sarasAPI) {
     window.sarasAPI.onWordData((data) => populate(data));
 
+    // Definition arrives after API fetch — update just the meaning section
+    window.sarasAPI.onDefinitionUpdate((data) => {
+      document.getElementById('dict-word').textContent    = data.word       || '';
+      document.getElementById('chip-word').textContent   = data.word       || '';
+      document.getElementById('dict-meaning').textContent = data.definition || '';
+
+      const example = data.examples?.[0] || '';
+      document.getElementById('dict-example').textContent = example;
+      document.getElementById('dict-example-row').style.display = example ? 'flex' : 'none';
+
+      const row = document.getElementById('synonyms-row');
+      row.querySelectorAll('.synonym-pill').forEach(el => el.remove());
+      (data.synonyms || []).forEach(syn => {
+        const pill = document.createElement('span');
+        pill.className = 'synonym-pill';
+        pill.textContent = syn;
+        row.appendChild(pill);
+      });
+      row.style.display = (data.synonyms && data.synonyms.length) ? 'flex' : 'none';
+    });
+
     // Wikipedia data arrives a moment later — update just that section
     window.sarasAPI.onWikiUpdate((data) => {
       document.getElementById('wiki-body').textContent =

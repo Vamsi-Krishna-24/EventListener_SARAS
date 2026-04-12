@@ -324,10 +324,10 @@ def _build_and_post(word: str, result: dict | None, click_x: int, click_y: int):
         })
         print(f"[DICT] popup opened for '{display_word}' (DB hit)", flush=True)
     else:
-        # ── DB miss — show popup instantly with loading state ────
+        # DB miss — tell the user honestly instead of slow API lookup
         _post_to_electron({
-            "word":        display_word,
-            "definition":  "Looking up…",
+            "word":        word,
+            "definition":  "Fetching online, just a sec...",
             "examples":    [],
             "synonyms":    [],
             "wikiSummary": "",
@@ -335,7 +335,7 @@ def _build_and_post(word: str, result: dict | None, click_x: int, click_y: int):
             "clickX":      click_x,
             "clickY":      click_y,
         })
-        print(f"[DICT] popup opened for '{display_word}' (loading…)", flush=True)
+        print(f"[DICT] '{word}' not in DB — told user", flush=True)
 
         # ── Now fetch the real definition and push update ────────
         definition = ""
