@@ -17,6 +17,13 @@ let popupWin = null;
 let lastPopupTime = 0;
 let pythonProcess = null;
 
+// Tracks the last known Python listener state so the tray menu and icon stay in sync
+let trayState = { listening: true, trigger_mode: 'double_click' };
+// Shown once per session when user closes the window instead of quitting
+let hideNotificationShown = false;
+// Handle to the polling interval so it can be cleared on quit
+let trayStatusInterval = null;
+
 // ───────────────────────────────────────────────
 // PYTHON BACKEND
 // ───────────────────────────────────────────────
@@ -117,6 +124,16 @@ function createWindow() {
     if (!app.isQuitting) {
       e.preventDefault();
       mainWindow.hide();
+      // Show a tray balloon the first time per session so users know
+      // the app is still running and how to actually quit it
+      if (!hideNotificationShown && tray) {
+        hideNotificationShown = true;
+        tray.displayBalloon({
+          iconType: 'info',
+          title: 'SARAS is still running',
+          content: 'To fully quit, right-click the tray icon and choose "Quit SARAS".'
+        });
+      }
     }
   });
 
@@ -419,13 +436,9 @@ function startPopupServer() {
 // ───────────────────────────────────────────────
 let tray = null;
 
-function createTray() {
-  const { Tray } = require('electron');
-  const iconPath = path.join(__dirname, 'assets', 'lotus_coin_v2.ico');
-  tray = new Tray(iconPath);
-  tray.setToolTip('SARAS — Running');
-
-  const contextMenu = Menu.buildFromTemplate([
+// Build the tray context menu fresh each time so the label reflects current state
+function buildTrayMenu() {
+  return Menu.buildFromTemplate([
     {
       label: 'Open SARAS',
       click: () => {
@@ -436,22 +449,101 @@ function createTray() {
     },
     { type: 'separator' },
     {
+      // Label flips between Pause / Resume based on live Python state
+      label: trayState.listening ? 'Pause Listening' : 'Resume Listening',
+      click: () => {
+        const newListening = !trayState.listening;
+        const payload = JSON.stringify({
+          listening:    newListening,
+          trigger_mode: trayState.trigger_mode
+        });
+        const req = http.request({
+          hostname: '127.0.0.1', port: 5000,
+          path: '/toggle', method: 'POST',
+          headers: {
+            'Content-Type':   'application/json',
+            'Content-Length': Buffer.byteLength(payload)
+          }
+        }, () => {});
+        req.on('error', () => {});
+        req.end(payload);
+        // Optimistic update — Python will confirm on the next 3 s poll
+        trayState.listening = newListening;
+        refreshTray();
+      }
+    },
+    { type: 'separator' },
+    {
       label: 'Quit SARAS',
       click: () => quitApp()
     }
   ]);
+}
 
-  tray.setContextMenu(contextMenu);
+// Apply icon, tooltip, and menu to the tray in one place
+function refreshTray() {
+  if (!tray) return;
+  const fs = require('fs');
+  const iconFile = trayState.listening ? 'lotus_running_green.ico' : 'lotus_sleeping_red.ico';
+  const statePath = path.join(__dirname, 'assets', iconFile);
+  const defaultPath = path.join(__dirname, 'assets', 'lotus_coin_v2.ico');
+  // Use the state-specific icon when it exists, fall back to the default coin icon
+  tray.setImage(fs.existsSync(statePath) ? statePath : defaultPath);
+  tray.setToolTip(trayState.listening ? 'SARAS — Listening' : 'SARAS — Paused');
+  tray.setContextMenu(buildTrayMenu());
+}
 
-  tray.on('click', () => {
+function createTray() {
+  const { Tray } = require('electron');
+  const iconPath = path.join(__dirname, 'assets', 'lotus_coin_v2.ico');
+  tray = new Tray(iconPath);
+  refreshTray();
+
+  // Single-click brings the window up — same as "Open SARAS"
+tray.on('click', () => {
     if (!mainWindow) createWindow();
     mainWindow.show();
     mainWindow.focus();
   });
+
+  tray.on('double-click', () => {
+    const newListening = !trayState.listening;
+    const payload = JSON.stringify({ listening: newListening, trigger_mode: trayState.trigger_mode });
+    const req = http.request({
+      hostname: '127.0.0.1', port: 5000, path: '/toggle', method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) }
+    }, () => {});
+    req.on('error', () => {});
+    req.end(payload);
+    trayState.listening = newListening;
+    refreshTray();
+  });
+
+  // Poll Python /status every 3 s to keep the tray icon and menu in sync
+  // with whatever state the user last set (including toggles done from the UI)
+  trayStatusInterval = setInterval(() => {
+    http.get('http://127.0.0.1:5000/status', (res) => {
+      let body = '';
+      res.on('data', d => { body += d; });
+      res.on('end', () => {
+        try {
+          const data = JSON.parse(body);
+          const changed =
+            data.listening    !== trayState.listening ||
+            data.trigger_mode !== trayState.trigger_mode;
+          if (changed) {
+            trayState = { listening: data.listening, trigger_mode: data.trigger_mode };
+            refreshTray();
+          }
+        } catch (_) {}
+      });
+    }).on('error', () => {}); // Python may not be ready during the first few seconds after launch
+  }, 3000);
 }
 
 function quitApp() {
   app.isQuitting = true;
+  if (trayStatusInterval) { clearInterval(trayStatusInterval); trayStatusInterval = null; }
   stopPythonBackend();
   if (tray) { tray.destroy(); tray = null; }
   if (popupServer) popupServer.close();
@@ -478,6 +570,28 @@ autoUpdater.on('update-downloaded', (info) => {
 autoUpdater.on('error', (err) => {
   log.error('[SARAS] Auto-update error:', err);
 });
+
+// ───────────────────────────────────────────────
+// SINGLE INSTANCE LOCK
+// Prevents the EADDRINUSE crash that happens when a user closes the window
+// (which only hides it) and double-clicks the desktop icon again.
+// The second launch detects the lock is already held, focuses the existing
+// window, and exits immediately — no second Electron process, no port conflict.
+// ───────────────────────────────────────────────
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  // Another instance is already running — quit this one silently
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    // User clicked the icon while the app was hidden — just bring it back
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+}
 
 // ───────────────────────────────────────────────
 // APP LIFECYCLE
@@ -561,3 +675,6 @@ ipcMain.on('open-in-saras', (_e, word) => {
 ipcMain.on('restart-and-install', () => {
   autoUpdater.quitAndInstall();
 });
+
+
+ipcMain.handle('get-app-version', () => app.getVersion());

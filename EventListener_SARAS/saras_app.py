@@ -1,13 +1,13 @@
 """
 saras_app.py  |  SARAS Backend  |  v0.3
 ═══════════════════════════════════════════════════════════════
-  Runs three things in parallel:
+  Runs two things in parallel:
     1. FastAPI server  (localhost:5000)  — talks to Electron UI
     2. ListenerController               — watches for trigger input
-    3. SarasTray                        — system tray icon (green/red)
 
-  PyQt6 is kept ONLY for the tray icon.
-  All UI (including popups) is handled by Electron.
+  The system tray icon (green = listening, red = paused) is now
+  owned by Electron (main.js) which polls /status every 3 s and
+  calls /toggle when the user clicks Pause/Resume from the tray.
 
   Endpoints (FastAPI on :5000):
     GET  /status          → { listening, trigger_mode }
@@ -55,9 +55,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from pynput import mouse, keyboard
 
-from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
-from PyQt6.QtCore import Qt, QTimer, QObject, pyqtSignal, pyqtSlot, QMetaObject, Qt as QtCore
-from PyQt6.QtGui import QFont, QColor, QIcon, QPixmap, QPainter, QPen, QAction
+from PyQt6.QtWidgets import QApplication
+from PyQt6.QtCore import QTimer, QObject, pyqtSignal, pyqtSlot, QMetaObject, Qt as QtCore
 
 from db_handler import (
     get_word_meaning,
@@ -76,38 +75,6 @@ print("[SARAS] Imports OK", flush=True)
 # ───────────────────────────────────────────────
 _BASE   = os.path.dirname(os.path.abspath(__file__))
 _PARENT = os.path.dirname(_BASE)
-
-
-def _find_icon(filename):
-    for folder in [_BASE, _PARENT]:
-        p = os.path.join(folder, filename)
-        if os.path.exists(p):
-            return p
-    return ""
-
-
-def _load_icon(filepath: str, fallback_color: str, label: str) -> QIcon:
-    """
-    Load a tray icon from an .ico file.
-    If the file is missing, generate a small coloured circle with a label
-    so the tray icon is never blank.
-    """
-    if filepath and os.path.exists(filepath):
-        return QIcon(filepath)
-
-    # Fallback — draw a 64×64 coloured circle with the label text
-    pix = QPixmap(64, 64)
-    pix.fill(QColor(0, 0, 0, 0))
-    painter = QPainter(pix)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    painter.setBrush(QColor(fallback_color))
-    painter.setPen(QPen(QColor(fallback_color), 0))
-    painter.drawEllipse(4, 4, 56, 56)
-    painter.setPen(QColor("white"))
-    painter.setFont(QFont("Arial", 16, QFont.Weight.Bold))
-    painter.drawText(pix.rect(), Qt.AlignmentFlag.AlignCenter, label)
-    painter.end()
-    return QIcon(pix)
 
 
 # ───────────────────────────────────────────────
@@ -169,8 +136,6 @@ class AppState(QObject):
 
 STATE      = None   # assigned after QApplication
 controller = None   # ListenerController — assigned in main()
-tray       = None   # SarasTray — assigned in main() or after activation
-_tray_needed = threading.Event()  # set by /start-listener to trigger tray creation on Qt thread
 
 
 # ───────────────────────────────────────────────
@@ -412,80 +377,6 @@ def process_queue():
 
 
 # ───────────────────────────────────────────────
-# TRAY ICON  — green = listening, red = paused
-# ───────────────────────────────────────────────
-class SarasTray(QSystemTrayIcon):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-
-        self._icon_on  = _load_icon(_find_icon("lotus_running_green.ico"), "#27AE60", "ON")
-        self._icon_off = _load_icon(_find_icon("lotus_sleeping_red.ico"),  "#C0392B", "OFF")
-
-        # build menu FIRST — _apply() references _toggle_act
-        menu = QMenu()
-        self._toggle_act = QAction()
-        self._toggle_act.triggered.connect(STATE.toggle)
-        menu.addAction(self._toggle_act)
-
-        menu.addSeparator()
-        quit_act = QAction("Quit SARAS")
-        quit_act.triggered.connect(self._quit)
-        menu.addAction(quit_act)
-
-        self.setContextMenu(menu)
-        self.activated.connect(self._on_activate)
-
-        # now safe to call _apply — _toggle_act exists
-        self._last_known = None
-        self._apply(STATE.active)
-
-        # signal-based sync
-        STATE.toggled.connect(self._apply)
-
-        # poll every 500ms as safety net for cross-thread updates
-        self._poll = QTimer()
-        self._poll.timeout.connect(self._poll_state)
-        self._poll.start(500)
-
-        self.show()
-
-        self.showMessage(
-            "SARAS",
-            "Running in the background. Double-click any word to look it up.",
-            QSystemTrayIcon.MessageIcon.Information,
-            3000
-        )
-
-    def _poll_state(self):
-        """Catches any state changes that the signal missed (cross-thread safety)."""
-        if STATE.active != self._last_known:
-            self._apply(STATE.active)
-
-    def _apply(self, active):
-        self._last_known = active
-        self.setIcon(self._icon_on if active else self._icon_off)
-        self.setToolTip("SARAS — Active" if active else "SARAS — Paused")
-        self._toggle_act.setText("Turn Off" if active else "Turn On")
-
-    def _on_activate(self, reason):
-        # double-click tray icon → toggle
-        if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
-            STATE.toggle()
-
-    def _quit(self):
-        if controller:
-            controller.stop()
-        # Tell Electron to shut down cleanly — it will also kill this process
-        try:
-            import httpx
-            with httpx.Client(timeout=2) as c:
-                c.post("http://127.0.0.1:5001/quit")
-        except Exception:
-            pass  # if Electron is already gone, just quit directly
-        QApplication.instance().quit()
-
-
-# ───────────────────────────────────────────────
 # FASTAPI APP
 # ───────────────────────────────────────────────
 api = FastAPI(title="SARAS API")
@@ -671,7 +562,7 @@ async def activate_license(body: ActivateRequest):
 def start_listener():
     """
     Called by main.js after first-time activation via navigate-to-main.
-    Single entry point — starts listener and flags Qt thread to show tray.
+    Starts the listener if it isn't already running.
     """
     if controller and not controller.is_running():
         controller.start()
@@ -679,7 +570,6 @@ def start_listener():
     else:
         print("[SARAS] /start-listener: listener already running", flush=True)
 
-    _tray_needed.set()
     return { "ok": True }
 
 
@@ -725,23 +615,6 @@ def main():
     queue_timer = QTimer()
     queue_timer.timeout.connect(process_queue)
     queue_timer.start(50)    # 50ms poll — avg 25ms faster response
-
-    # ── Tray check timer — creates tray on Qt thread after activation ──
-    def _check_tray_needed():
-        global tray
-        if tray is None and _tray_needed.is_set():
-            tray = SarasTray()
-            _tray_needed.clear()
-            print("[SARAS] Tray icon created after activation", flush=True)
-
-    tray_check_timer = QTimer()
-    tray_check_timer.timeout.connect(_check_tray_needed)
-    tray_check_timer.start(300)
-
-    # ── Tray — only show if user is already activated ────
-    tray = SarasTray() if is_activated() else None
-    if not tray:
-        print("[SARAS] Not activated — tray icon held until activation", flush=True)
 
     # ── FastAPI in background thread ─────────────
     api_thread = threading.Thread(target=_run_api, daemon=True)
