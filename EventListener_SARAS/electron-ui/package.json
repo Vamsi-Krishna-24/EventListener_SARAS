@@ -1,13 +1,13 @@
 {
   "name": "saras-dictionary",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "SARAS — The Windows Dictionary App for Curious Readers",
   "main": "main.js",
   "scripts": {
-  "start": "electron .",
-  "dist":  "electron-builder --publish never",
-  "release": "electron-builder --publish always"
-},
+    "start": "electron .",
+    "dist":  "electron-builder --publish never",
+    "release": "electron-builder --publish always"
+  },
   "author": "SARAS",
   "license": "MIT",
   "devDependencies": {
@@ -18,9 +18,8 @@
     "appId": "com.saras.dictionary",
     "productName": "SARAS",
     "publish": {
-      "provider": "github",
-      "owner": "Vamsi-Krishna-24",
-      "repo":  "EventListener_SARAS"
+      "provider": "generic",
+      "url": "https://storage.googleapis.com/saras-downloadable-2026/"
     },
     "win": {
       "icon": "assets/lotus_coin_v2.ico",
