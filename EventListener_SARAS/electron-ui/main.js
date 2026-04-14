@@ -5,6 +5,30 @@ const { spawn } = require('child_process');
 const { autoUpdater } = require('electron-updater');
 const log = require('electron-log');
 
+
+// ───────────────────────────────────────────────
+// SINGLE INSTANCE LOCK
+// Prevents the EADDRINUSE crash that happens when a user closes the window
+// (which only hides it) and double-clicks the desktop icon again.
+// The second launch detects the lock is already held, focuses the existing
+// window, and exits immediately — no second Electron process, no port conflict.
+// ───────────────────────────────────────────────
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  // Another instance is already running — quit this one silently
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    // User clicked the icon while the app was hidden — just bring it back
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+}
+
+
 // ───────────────────────────────────────────────
 // AUTO-UPDATE LOGGER
 // ───────────────────────────────────────────────
@@ -571,32 +595,12 @@ autoUpdater.on('error', (err) => {
   log.error('[SARAS] Auto-update error:', err);
 });
 
-// ───────────────────────────────────────────────
-// SINGLE INSTANCE LOCK
-// Prevents the EADDRINUSE crash that happens when a user closes the window
-// (which only hides it) and double-clicks the desktop icon again.
-// The second launch detects the lock is already held, focuses the existing
-// window, and exits immediately — no second Electron process, no port conflict.
-// ───────────────────────────────────────────────
-const gotTheLock = app.requestSingleInstanceLock();
-if (!gotTheLock) {
-  // Another instance is already running — quit this one silently
-  app.quit();
-} else {
-  app.on('second-instance', () => {
-    // User clicked the icon while the app was hidden — just bring it back
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.show();
-      mainWindow.focus();
-    }
-  });
-}
 
 // ───────────────────────────────────────────────
 // APP LIFECYCLE
 // ───────────────────────────────────────────────
 app.whenReady().then(() => {
+  if (!gotTheLock) return;
   startPythonBackend();
   createWindow();
   createTray();
