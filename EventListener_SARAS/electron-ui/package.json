@@ -1,11 +1,12 @@
 {
   "name": "saras-dictionary",
-  "version": "1.0.5",
+  "version": "26.4.6",
   "description": "SARAS — The Windows Dictionary App for Curious Readers",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "dist":  "electron-builder --publish never",
+    "dist": "electron-builder --publish never",
+    "dist:appx": "electron-builder --win appx --publish never",
     "release": "electron-builder --publish always"
   },
   "author": "SARAS",
@@ -23,7 +24,14 @@
     },
     "win": {
       "icon": "assets/lotus_coin_v2.ico",
-      "target": "nsis"
+      "target": ["nsis", "appx"]
+    },
+    "appx": {
+      "identityName": "VamsiKrishnaSurisetti.SARAS",
+      "publisher": "CN=4E2E9B30-9FC1-460B-BD7F-5F39984AF76F",
+      "publisherDisplayName": "VamsiKrishna Surisetti",
+      "displayName": "SARAS",
+      "applicationId": "SARAS"
     },
     "extraResources": [
       {
