@@ -42,9 +42,10 @@ let lastPopupTime = 0;
 let pythonProcess = null;
 
 // Tracks the last known Python listener state so the tray menu and icon stay in sync
-let trayState = { listening: true, trigger_mode: 'double_click' };
+let trayState = { listening: false, trigger_mode: 'double_click' };
 // Shown once per session when user closes the window instead of quitting
 let hideNotificationShown = false;
+let isOnboarding = true; // true until user activates
 // Handle to the polling interval so it can be cleared on quit
 let trayStatusInterval = null;
 
@@ -54,17 +55,16 @@ let trayStatusInterval = null;
 function startPythonBackend() {
   if (pythonProcess) return;
 
+  const sharedEnv = { ...process.env, PYTHONIOENCODING: 'utf-8' };
+
   let proc;
   if (app.isPackaged) {
     const exePath = path.join(process.resourcesPath, 'Saras.exe');
-    proc = spawn(exePath, [], { detached: false });
+    proc = spawn(exePath, [], { detached: false, env: sharedEnv });
   } else {
     const scriptPath = path.join(__dirname, '..', 'saras_app.py');
     const pythonBin  = process.platform === 'win32' ? 'python' : 'python3';
-    proc = spawn(pythonBin, [scriptPath], {
-      detached: false,
-      env: { ...process.env, PYTHONIOENCODING: 'utf-8' }
-    });
+    proc = spawn(pythonBin, [scriptPath], { detached: false, env: sharedEnv });
   }
 
   proc.stdout.on('data', d => console.log('[Python]', d.toString().trim()));
@@ -131,6 +131,9 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false
+      // TODO: migrate renderer files to use window.sarasAPI.* from preload-main.js,
+      // then switch to: nodeIntegration: false, contextIsolation: true,
+      // preload: path.join(__dirname, 'preload-main.js')
     },
     icon: path.join(__dirname, 'assets', 'lotus_coin_v2.ico')
   });
@@ -143,13 +146,17 @@ function createWindow() {
     return { action: 'deny' };
   });
 
-  // Hide instead of close — keeps backend alive
+  // During onboarding: X kills the app. After activation: X hides to tray.
   mainWindow.on('close', (e) => {
+    if (isOnboarding) {
+      // Onboarding — X button actually kills the app
+      quitApp();
+      return;
+    }
+    // After activation — minimize to tray
     if (!app.isQuitting) {
       e.preventDefault();
       mainWindow.hide();
-      // Show a tray balloon the first time per session so users know
-      // the app is still running and how to actually quit it
       if (!hideNotificationShown && tray) {
         hideNotificationShown = true;
         tray.displayBalloon({
@@ -179,8 +186,10 @@ function loadStartPage(attempt = 0) {
         const data = JSON.parse(body);
         if (data.activated) {
           console.log(`[SARAS] Activated — welcome back ${data.first_name}`);
+          enablePostActivation();
           mainWindow.loadFile('index.html');
         } else {
+          isOnboarding = true;
           console.log('[SARAS] Not activated — loading onboarding');
           mainWindow.loadFile(path.join(__dirname, 'renderer', 'onboarding.html'));
         }
@@ -203,6 +212,9 @@ function loadStartPage(attempt = 0) {
 // POPUP WINDOW
 // ───────────────────────────────────────────────
 function createPopupWindow({ word = '', definition = '', examples = [], synonyms = [], wikiSummary = '', wikiUrl = '', clickX = null, clickY = null }) {
+  // Block popup entirely before license activation
+  if (isOnboarding) return;
+
   // Debounce: ignore rapid-fire calls within 400ms
   const now = Date.now();
   if (now - lastPopupTime < 400) return;
@@ -360,6 +372,15 @@ function startPopupServer() {
       res.writeHead(204); res.end(); return;
     }
 
+    // ── ACTIVATION GATE ──────────────────────────────────────────────────────
+    // Block all feature routes before license activation.
+    // Only /quit is allowed through (so the app can still be closed).
+    if (isOnboarding && req.url !== '/quit') {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'not activated' }));
+      return;
+    }
+
     // ── GET /cursor-pos ──────────────────────────────────────────────────────
     // Python no longer needs this (pynput coords are already logical),
     // but kept as a diagnostic endpoint.
@@ -462,6 +483,23 @@ let tray = null;
 
 // Build the tray context menu fresh each time so the label reflects current state
 function buildTrayMenu() {
+  // During onboarding — no listener controls, just Open + Close
+  if (isOnboarding) {
+    return Menu.buildFromTemplate([
+      {
+        label: 'Open SARAS',
+        click: () => {
+          if (!mainWindow) createWindow();
+          mainWindow.show();
+          mainWindow.focus();
+        }
+      },
+      { type: 'separator' },
+      { label: 'Close', click: () => quitApp() }
+    ]);
+  }
+
+  // After activation — full menu with listener controls
   return Menu.buildFromTemplate([
     {
       label: 'Open SARAS',
@@ -494,6 +532,10 @@ function buildTrayMenu() {
         // Optimistic update — Python will confirm on the next 3 s poll
         trayState.listening = newListening;
         refreshTray();
+        // Push to renderer so settings toggle updates immediately
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('state-update', trayState);
+        }
       }
     },
     { type: 'separator' },
@@ -531,6 +573,7 @@ tray.on('click', () => {
   });
 
   tray.on('double-click', () => {
+    if (isOnboarding) return;  // No listener toggle before activation
     const newListening = !trayState.listening;
     const payload = JSON.stringify({ listening: newListening, trigger_mode: trayState.trigger_mode });
     const req = http.request({
@@ -541,6 +584,9 @@ tray.on('click', () => {
     req.end(payload);
     trayState.listening = newListening;
     refreshTray();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('state-update', trayState);
+    }
   });
 
   // Poll Python /status every 3 s to keep the tray icon and menu in sync
@@ -558,6 +604,10 @@ tray.on('click', () => {
           if (changed) {
             trayState = { listening: data.listening, trigger_mode: data.trigger_mode };
             refreshTray();
+            // Push to renderer so settings toggle stays in sync
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('state-update', data);
+            }
           }
         } catch (_) {}
       });
@@ -572,6 +622,22 @@ function quitApp() {
   if (tray) { tray.destroy(); tray = null; }
   if (popupServer) popupServer.close();
   app.quit();
+}
+
+// ───────────────────────────────────────────────
+// POST-ACTIVATION BOOTSTRAP
+// Starts all feature infrastructure ONLY after license is confirmed.
+// Called from exactly two places: loadStartPage (returning user)
+// and verifyActivation inside navigate-to-main (new activation).
+// ───────────────────────────────────────────────
+function enablePostActivation() {
+  isOnboarding = false;
+  if (!tray) createTray();
+  refreshTray();
+  if (!popupServer) {
+    startPopupServer();
+    warmPopupCache();
+  }
 }
 
 // ───────────────────────────────────────────────
@@ -603,9 +669,8 @@ app.whenReady().then(() => {
   if (!gotTheLock) return;
   startPythonBackend();
   createWindow();
-  createTray();
-  startPopupServer();
-  warmPopupCache();    // Prime Electron's cache for faster popup creation
+  // createTray(), startPopupServer(), warmPopupCache() are all deferred
+  // until activation is confirmed — no feature infrastructure pre-license.
 
   // Only check for updates in packaged builds (not during npm start)
   if (app.isPackaged) {
@@ -621,6 +686,7 @@ app.on('activate', () => {
 });
 
 app.on('before-quit', () => {
+  app.isQuitting = true;
   stopPythonBackend();
   if (popupServer) popupServer.close();
 });
@@ -637,18 +703,70 @@ ipcMain.on('window-maximize', () => {
   }
 });
 
-ipcMain.on('window-close', () => { if (mainWindow) mainWindow.hide(); });
+ipcMain.on('window-close', () => {
+  if (mainWindow) {
+    if (isOnboarding) quitApp();
+    else mainWindow.hide();
+  }
+});
 
 ipcMain.on('open-external', (event, url) => { shell.openExternal(url); });
 
-// Onboarding complete — start listener + tray, then load main app
+// Renderer notifies main.js when user changes toggle/mode in settings UI.
+// This updates the tray instantly instead of waiting for the next 3s poll.
+ipcMain.on('state-changed', (_e, newState) => {
+  if (newState.listening !== undefined) trayState.listening = newState.listening;
+  if (newState.trigger_mode) trayState.trigger_mode = newState.trigger_mode;
+  refreshTray();
+});
+
+// Onboarding complete — verify with backend, then start listener + tray
 ipcMain.on('navigate-to-main', () => {
-  console.log('[SARAS] Activation complete — starting listener and loading main app');
-  http.request({
-    hostname: '127.0.0.1', port: 5000, path: '/start-listener', method: 'POST',
-    headers: { 'Content-Length': '0' }
-  }, () => {}).end();
-  mainWindow.loadFile('index.html');
+  // Don't blindly trust the renderer — confirm with Python backend.
+  // Fail CLOSED: if we can't verify, the user stays on onboarding.
+  const MAX_VERIFY_RETRIES = 5;
+  const VERIFY_DELAY = 500;
+
+  function verifyActivation(attempt) {
+    http.get('http://127.0.0.1:5000/check-activation', (res) => {
+      let body = '';
+      res.on('data', chunk => { body += chunk; });
+      res.on('end', () => {
+        let activated = false;
+        try {
+          const data = JSON.parse(body);
+          activated = data.activated === true;
+        } catch (_) {
+          activated = false;
+        }
+
+        if (!activated) {
+          console.log('[SARAS] navigate-to-main rejected — backend says not activated');
+          return;  // Stay on onboarding — fail closed
+        }
+
+        // Backend confirmed — safe to proceed
+        enablePostActivation();
+        console.log('[SARAS] Activation verified — starting listener and loading main app');
+        http.request({
+          hostname: '127.0.0.1', port: 5000, path: '/start-listener', method: 'POST',
+          headers: { 'Content-Length': '0' }
+        }, () => {}).end();
+        mainWindow.loadFile('index.html');
+      });
+    }).on('error', () => {
+      // Backend unreachable — retry a few times, then give up (fail closed)
+      if (attempt < MAX_VERIFY_RETRIES) {
+        console.log(`[SARAS] Verify attempt ${attempt + 1}/${MAX_VERIFY_RETRIES} failed — retrying...`);
+        setTimeout(() => verifyActivation(attempt + 1), VERIFY_DELAY);
+      } else {
+        console.log('[SARAS] Could not verify activation — staying on onboarding (fail closed)');
+        // User stays on onboarding screen — no free access
+      }
+    });
+  }
+
+  verifyActivation(0);
 });
 
 // Popup closes itself

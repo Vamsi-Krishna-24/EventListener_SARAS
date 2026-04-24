@@ -345,6 +345,8 @@ def _build_and_post(word: str, result: dict | None, click_x: int, click_y: int):
 
 def process_queue():
     """Called every 50 ms by QTimer on the Qt main thread."""
+    if not is_activated():
+        return
 
     # Drain the whole queue, act only on the latest item
     items = []
@@ -397,7 +399,10 @@ class ToggleRequest(BaseModel):
 
 @api.get("/status")
 def get_status():
-    """Electron polls this every 2 s to keep UI in sync with tray."""
+    """Electron polls this every 3 s to keep UI in sync with tray."""
+    if not is_activated():
+        return {"listening": False, "trigger_mode": "double_click"}
+
     return {
         "listening":    STATE.active,
         "trigger_mode": STATE.trigger_mode,
@@ -410,6 +415,9 @@ def post_toggle(body: ToggleRequest):
     Electron calls this when user changes toggle or trigger mode.
     STATE change automatically syncs the tray icon via Qt signal.
     """
+    if not is_activated():
+        return {"error": "not activated"}
+
     STATE.set_active(body.listening)
     STATE.set_trigger_mode(body.trigger_mode)
 
@@ -433,6 +441,9 @@ async def define_word(word: str):
     1. Query local DB first.
     2. If not found, fall back to dictionaryapi.dev.
     """
+    if not is_activated():
+        return {"error": "not activated"}
+
     if not word or not word.strip():
         return {"error": "empty word"}
 
@@ -564,6 +575,10 @@ def start_listener():
     Called by main.js after first-time activation via navigate-to-main.
     Starts the listener if it isn't already running.
     """
+    if not is_activated():
+        print("[SARAS] /start-listener blocked — not activated", flush=True)
+        return { "ok": False, "error": "not activated" }
+
     if controller and not controller.is_running():
         controller.start()
         print("[SARAS] Listener started via /start-listener", flush=True)

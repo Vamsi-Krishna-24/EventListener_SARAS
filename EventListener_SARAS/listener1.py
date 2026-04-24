@@ -341,16 +341,38 @@ class ListenerController:
 
     def _long_press_capture(self, x, y):
         """
-        Temporarily pause the listener, simulate a double-click to let
-        the OS select the word under the cursor, then capture.
+        Stop the listener (its low-level hook swallows synthetic events),
+        simulate a double-click at the original press position to select
+        the word, capture it, then restart the listener.
         """
-        self._stop_flag.set()
+        # Stop the listener — its WH_MOUSE_LL hook intercepts synthetic
+        # mouse events before they reach the target application, which
+        # prevents the simulated double-click from selecting the word.
+        if self._listener:
+            self._listener.stop()
+            self._listener = None
+
         try:
+            # Let the OS fully process the user's button release
+            time.sleep(0.05)
+
+            # Return cursor to the exact press position (may have drifted
+            # slightly during the hold)
+            self._mouse.position = (x, y)
+            time.sleep(0.02)
+
+            # Simulate double-click to select the word under the cursor
             self._mouse.click(mouse.Button.left, 2)
-            time.sleep(0.08)        # let the OS finish updating the selection
+
+            # Generous delay so the OS finishes updating the text selection
+            time.sleep(0.15)
+
             self._capture_word(x, y)
         finally:
+            # Restart the listener
             self._stop_flag.clear()
+            self._listener = mouse.Listener(on_click=self._on_click)
+            self._listener.start()
 
     # ── Core capture ──────────────────────────────────────────────────────────
 

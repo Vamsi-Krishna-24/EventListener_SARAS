@@ -149,6 +149,8 @@ def save_user_profile(first_name: str, last_name: str, email: str, license_key: 
 def get_user_profile():
     """Returns the stored user profile dict, or None if not activated yet."""
     try:
+        print(f"[DB] Reading profile from: {PROFILE_DB_PATH}", flush=True)
+        print(f"[DB] File exists: {os.path.exists(PROFILE_DB_PATH)}", flush=True)
         connect = sqlite3.connect(PROFILE_DB_PATH)
         cursor = connect.cursor()
         cursor.execute('''
@@ -160,6 +162,7 @@ def get_user_profile():
         connect.close()
 
         if row:
+            print(f"[DB] Profile found: {row[0]} {row[1]}", flush=True)
             return {
                 'first_name':   row[0],
                 'last_name':    row[1],
@@ -167,6 +170,7 @@ def get_user_profile():
                 'license_key':  row[3],
                 'activated_at': row[4],
             }
+        print("[DB] Profile table exists but has NO rows", flush=True)
         return None
 
     except sqlite3.Error as e:
