@@ -174,10 +174,17 @@ function createWindow() {
 // ───────────────────────────────────────────────
 // START PAGE — polls Python, routes to onboarding or main app
 // ───────────────────────────────────────────────
-const RETRY_DELAY = 600;
-const MAX_RETRIES = 15;
+const RETRY_DELAY = 800;
+const MAX_RETRIES = app.isPackaged ? 40 : 15; // packaged .exe +more cold-start time
 
 function loadStartPage(attempt = 0) {
+  // Show loading screen immediately on first attempt
+  if (attempt === 0) {
+    mainWindow.loadFile(path.join(__dirname, 'renderer', 'loading.html'));
+    setTimeout(() => loadStartPage(1), app.isPackaged ? 3000 : 500);
+    return;
+  }
+
   http.get('http://127.0.0.1:5000/check-activation', (res) => {
     let body = '';
     res.on('data', chunk => { body += chunk; });
@@ -194,6 +201,9 @@ function loadStartPage(attempt = 0) {
           mainWindow.loadFile(path.join(__dirname, 'renderer', 'onboarding.html'));
         }
       } catch (e) {
+        // ✅ Log what actually went wrong
+        console.error('[SARAS] Failed to parse /check-activation response:', e.message);
+        console.error('[SARAS] Raw body was:', body);
         mainWindow.loadFile(path.join(__dirname, 'renderer', 'onboarding.html'));
       }
     });

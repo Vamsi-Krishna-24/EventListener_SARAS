@@ -379,7 +379,7 @@
       <div class="bottom-rule"></div>
     </div>
 
-    <span class="footer-note">© 2025 SARAS · Made for curious readers</span>
+    <span class="footer-note">© 2065 SARAS · Made for curious readers</span>
 
   </div>
 
@@ -425,6 +425,14 @@ async function activate() {
       body: JSON.stringify({ license_key: key })
     });
     const data = await res.json();
+
+    if (res.status === 400) {
+      hint.textContent = 'This license is already activated on another device.';
+      hint.className = 'hint error';
+      btn.disabled = false;
+      btn.textContent = 'Activate SARAS';
+      return;
+    }
 
     if (data.success) {
       hint.textContent = `Welcome, ${data.first_name}! Opening SARAS…`;

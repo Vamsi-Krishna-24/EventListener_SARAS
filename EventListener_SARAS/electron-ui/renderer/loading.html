@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>SARAS · Starting</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital@1&family=Outfit:wght@300;400&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Outfit', sans-serif;
+    background: #0D0D0B;
+    color: #FFFFFF;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    user-select: none;
+    overflow: hidden;
+  }
+
+  .logo-img {
+    width: 42px;
+    height: 42px;
+    object-fit: contain;
+    filter: drop-shadow(0 0 10px rgba(196,160,85,0.5));
+    margin-bottom: 28px;
+    animation: pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1;   transform: scale(1); }
+    50%       { opacity: 0.6; transform: scale(0.95); }
+  }
+
+  .message {
+    font-size: 0.82rem;
+    font-weight: 300;
+    color: rgba(181,181,173,0.6);
+    letter-spacing: 0.12em;
+    text-align: center;
+    margin-bottom: 32px;
+  }
+
+  /* Animated dots bar */
+  .bar {
+    width: 120px;
+    height: 2px;
+    background: rgba(196,160,85,0.15);
+    border-radius: 2px;
+    overflow: hidden;
+    position: relative;
+  }
+  .bar-fill {
+    position: absolute;
+    height: 100%;
+    width: 40%;
+    background: #C4A055;
+    border-radius: 2px;
+    animation: slide 1.4s ease-in-out infinite;
+  }
+  @keyframes slide {
+    0%   { left: -40%; }
+    100% { left: 140%; }
+  }
+
+  .footer-note {
+    position: absolute;
+    bottom: 18px;
+    font-size: 0.68rem;
+    font-weight: 300;
+    color: rgba(181,181,173,0.25);
+    letter-spacing: 0.08em;
+  }
+</style>
+</head>
+<body>
+  <img src="../assets/lotus_coin_v2.ico" alt="SARAS" class="logo-img" />
+  <p class="message">Please wait while we set everything up for you…</p>
+  <div class="bar"><div class="bar-fill"></div></div>
+  <span class="footer-note">© 2026 SARAS · Made for curious readers</span>
+</body>
+</html>
