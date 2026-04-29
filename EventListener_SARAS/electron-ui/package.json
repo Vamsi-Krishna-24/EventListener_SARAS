@@ -1,6 +1,6 @@
 {
   "name": "saras-dictionary",
-  "version": "26.4.8",
+  "version": "26.4.9",
   "description": "SARAS — The Windows Dictionary App for Curious Readers",
   "main": "main.js",
   "scripts": {
