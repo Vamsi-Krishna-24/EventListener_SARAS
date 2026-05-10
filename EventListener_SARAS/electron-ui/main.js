@@ -172,7 +172,7 @@ function createWindow() {
 }
 
 // ───────────────────────────────────────────────
-// START PAGE — polls Python, routes to onboarding or main app
+// START PAGE — polls Python, routes to onboarding or main app app
 // ───────────────────────────────────────────────
 const RETRY_DELAY = 800;
 const MAX_RETRIES = app.isPackaged ? 40 : 15; // packaged .exe +more cold-start time
