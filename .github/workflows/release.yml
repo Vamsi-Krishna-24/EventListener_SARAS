@@ -1,0 +1,41 @@
+name: Build & Release SARAS
+
+on:
+  push:
+    branches: [master]
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python dependencies
+        run: pip install comtypes pyperclip pynput pyinstaller uvicorn fastapi httpx PyQt6
+        working-directory: EventListener_SARAS
+
+      - name: Pre-generate comtypes UIA bindings
+        run: python -c "import comtypes.client; comtypes.client.GetModule('UIAutomationCore.dll')"
+        working-directory: EventListener_SARAS
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Node dependencies
+        run: npm install
+        working-directory: EventListener_SARAS/electron-ui
+
+      - name: Build & publish to GitHub Releases
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: npm run dist
+        working-directory: EventListener_SARAS/electron-ui

@@ -1,13 +1,13 @@
 """
 saras_app.py  |  SARAS Backend  |  v0.3
 ═══════════════════════════════════════════════════════════════
-  Runs three things in parallel:
+  Runs two things in parallel:
     1. FastAPI server  (localhost:5000)  — talks to Electron UI
     2. ListenerController               — watches for trigger input
-    3. SarasTray                        — system tray icon (green/red)
 
-  PyQt6 is kept ONLY for the tray icon.
-  All UI (including popups) is handled by Electron.
+  The system tray icon (green = listening, red = paused) is now
+  owned by Electron (main.js) which polls /status every 3 s and
+  calls /toggle when the user clicks Pause/Resume from the tray.
 
   Endpoints (FastAPI on :5000):
     GET  /status          → { listening, trigger_mode }
@@ -55,9 +55,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from pynput import mouse, keyboard
 
-from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
-from PyQt6.QtCore import Qt, QTimer, QObject, pyqtSignal, pyqtSlot, QMetaObject, Qt as QtCore
-from PyQt6.QtGui import QFont, QColor, QIcon, QPixmap, QPainter, QPen, QAction
+from PyQt6.QtWidgets import QApplication
+from PyQt6.QtCore import QTimer, QObject, pyqtSignal, pyqtSlot, QMetaObject, Qt as QtCore
 
 from db_handler import (
     get_word_meaning,
@@ -76,38 +75,6 @@ print("[SARAS] Imports OK", flush=True)
 # ───────────────────────────────────────────────
 _BASE   = os.path.dirname(os.path.abspath(__file__))
 _PARENT = os.path.dirname(_BASE)
-
-
-def _find_icon(filename):
-    for folder in [_BASE, _PARENT]:
-        p = os.path.join(folder, filename)
-        if os.path.exists(p):
-            return p
-    return ""
-
-
-def _load_icon(filepath: str, fallback_color: str, label: str) -> QIcon:
-    """
-    Load a tray icon from an .ico file.
-    If the file is missing, generate a small coloured circle with a label
-    so the tray icon is never blank.
-    """
-    if filepath and os.path.exists(filepath):
-        return QIcon(filepath)
-
-    # Fallback — draw a 64×64 coloured circle with the label text
-    pix = QPixmap(64, 64)
-    pix.fill(QColor(0, 0, 0, 0))
-    painter = QPainter(pix)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    painter.setBrush(QColor(fallback_color))
-    painter.setPen(QPen(QColor(fallback_color), 0))
-    painter.drawEllipse(4, 4, 56, 56)
-    painter.setPen(QColor("white"))
-    painter.setFont(QFont("Arial", 16, QFont.Weight.Bold))
-    painter.drawText(pix.rect(), Qt.AlignmentFlag.AlignCenter, label)
-    painter.end()
-    return QIcon(pix)
 
 
 # ───────────────────────────────────────────────
@@ -169,8 +136,6 @@ class AppState(QObject):
 
 STATE      = None   # assigned after QApplication
 controller = None   # ListenerController — assigned in main()
-tray       = None   # SarasTray — assigned in main() or after activation
-_tray_needed = threading.Event()  # set by /start-listener to trigger tray creation on Qt thread
 
 
 # ───────────────────────────────────────────────
@@ -180,18 +145,27 @@ word_queue = queue.Queue()
 
 ELECTRON_POPUP_URL = "http://127.0.0.1:5001/show-popup"
 
+# ── Persistent HTTP client — reuses TCP connection to Electron ──
+# Avoids ~40-50ms TCP handshake on every popup trigger.
+# Keep-alive keeps the socket warm between requests.
+_electron_client = httpx.Client(
+    base_url="http://127.0.0.1:5001",
+    timeout=3,
+    limits=httpx.Limits(max_keepalive_connections=1, max_connections=2),
+)
+
 
 def _post_to_electron(payload: dict):
     """
     Fire-and-forget POST to Electron's popup server.
     Runs in a daemon thread so it never blocks the Qt main thread.
     Silently ignores connection errors (Electron may not be ready yet).
+    Uses persistent client to skip TCP handshake.
     """
     try:
-        with httpx.Client(timeout=3) as client:
-            r = client.post(ELECTRON_POPUP_URL, json=payload)
-            if r.status_code != 200:
-                print(f"[POPUP] Electron returned {r.status_code}", flush=True)
+        r = _electron_client.post("/show-popup", json=payload)
+        if r.status_code != 200:
+            print(f"[POPUP] Electron returned {r.status_code}", flush=True)
     except Exception as e:
         print(f"[POPUP] Could not reach Electron popup server: {e}", flush=True)
 
@@ -264,34 +238,74 @@ ELECTRON_WIKI_URL = "http://127.0.0.1:5001/update-wiki"
 def _post_wiki_update(word: str, wiki_summary: str, wiki_url: str):
     """POST just the Wikipedia data to the already-open popup."""
     try:
-        with httpx.Client(timeout=3) as client:
-            r = client.post(ELECTRON_WIKI_URL, json={
-                "word":        word,
-                "wikiSummary": wiki_summary,
-                "wikiUrl":     wiki_url,
-            })
-            print(f"[WIKI] update sent for '{word}' → {r.status_code}", flush=True)
+        r = _electron_client.post("/update-wiki", json={
+            "word":        word,
+            "wikiSummary": wiki_summary,
+            "wikiUrl":     wiki_url,
+        })
+        print(f"[WIKI] update sent for '{word}' → {r.status_code}", flush=True)
     except Exception as e:
         print(f"[WIKI] update post failed for '{word}': {e}", flush=True)
+
+
+def _post_definition_update(word: str, definition: str, examples: list, synonyms: list):
+    """POST the real definition to an already-open popup (after API lookup)."""
+    try:
+        r = _electron_client.post("/update-definition", json={
+            "word":       word,
+            "definition": definition,
+            "examples":   examples,
+            "synonyms":   synonyms,
+        })
+        print(f"[DICT] definition update sent for '{word}' → {r.status_code}", flush=True)
+    except Exception as e:
+        print(f"[DICT] definition update failed for '{word}': {e}", flush=True)
 
 
 def _build_and_post(word: str, result: dict | None, click_x: int, click_y: int):
     """
     Called in a background thread.
-    Step 1 — POST dict data immediately so popup appears instantly.
-    Step 2 — Fetch Wikipedia, then POST /update-wiki to fill the wiki tab.
+    Step 1 — POST popup immediately (with data if DB hit, or loading state if miss).
+    Step 2 — If DB miss, fetch from dictionaryapi.dev and push update.
+    Step 3 — Fetch Wikipedia and push update to fill the wiki tab.
     """
-    definition = ""
-    examples: list = []
-    synonyms: list = []
+    display_word = result.get("word", word) if result else word
 
     if result:
-        # ── Local DB hit ─────────────────────────
+        # ── Local DB hit — send full data immediately ────────────
         definition = result.get("definition", "")
         examples   = result.get("examples",   [])
         synonyms   = result.get("synonyms",   [])
+
+        _post_to_electron({
+            "word":        display_word,
+            "definition":  definition or "No definition found.",
+            "examples":    examples,
+            "synonyms":    synonyms,
+            "wikiSummary": "",
+            "wikiUrl":     "",
+            "clickX":      click_x,
+            "clickY":      click_y,
+        })
+        print(f"[DICT] popup opened for '{display_word}' (DB hit)", flush=True)
     else:
-        # ── DB miss → try dictionaryapi.dev ──────
+        # DB miss — tell the user honestly instead of slow API lookup
+        _post_to_electron({
+            "word":        word,
+            "definition":  "Fetching online, just a sec...",
+            "examples":    [],
+            "synonyms":    [],
+            "wikiSummary": "",
+            "wikiUrl":     "",
+            "clickX":      click_x,
+            "clickY":      click_y,
+        })
+        print(f"[DICT] '{word}' not in DB — told user", flush=True)
+
+        # ── Now fetch the real definition and push update ────────
+        definition = ""
+        examples: list = []
+        synonyms: list = []
         try:
             r = httpx.get(
                 f"https://api.dictionaryapi.dev/api/v2/entries/en/{word}",
@@ -311,23 +325,17 @@ def _build_and_post(word: str, result: dict | None, click_x: int, click_y: int):
         except Exception as e:
             print(f"[DICT] dictionaryapi.dev failed for '{word}': {e}", flush=True)
 
-    display_word = result.get("word", word) if result else word
+        # Push real definition to the already-visible popup
+        _post_definition_update(
+            display_word,
+            definition or "No definition found.",
+            examples,
+            synonyms,
+        )
 
-    # ── Step 1: send dict data immediately — popup opens right away ──────
-    _post_to_electron({
-        "word":        display_word,
-        "definition":  definition or "No definition found.",
-        "examples":    examples,
-        "synonyms":    synonyms,
-        "wikiSummary": "",
-        "wikiUrl":     "",
-        "clickX":      click_x,
-        "clickY":      click_y,
-    })
-    print(f"[DICT] popup opened for '{display_word}'", flush=True)
     print(f"[COORD DEBUG] word='{display_word}' clickX={click_x} clickY={click_y}", flush=True)
 
-    # ── Step 2: fetch Wikipedia and push update to the open popup ────────
+    # ── Fetch Wikipedia and push update to the open popup ────────
     print(f"[WIKI] fetching for '{word}'...", flush=True)
     wiki_summary, wiki_url = _fetch_wiki(word)
     print(f"[WIKI] result for '{word}': summary={wiki_summary[:60] if wiki_summary else 'EMPTY'}", flush=True)
@@ -336,8 +344,9 @@ def _build_and_post(word: str, result: dict | None, click_x: int, click_y: int):
 
 
 def process_queue():
-    """Called every 100 ms by QTimer on the Qt main thread."""
-    global _last_popup_word, _last_popup_time
+    """Called every 50 ms by QTimer on the Qt main thread."""
+    if not is_activated():
+        return
 
     # Drain the whole queue, act only on the latest item
     items = []
@@ -356,12 +365,8 @@ def process_queue():
     word, click_x, click_y = items[-1]
     word = word.strip().lower()
 
-    # Cooldown: skip if the same word fired recently
-    now = time.monotonic()
-    if word == _last_popup_word and (now - _last_popup_time) < POPUP_COOLDOWN_S:
-        return
-    _last_popup_word = word
-    _last_popup_time = now
+    # No same-word cooldown — every trigger should show the popup.
+    # The Electron-side debounce (400ms) prevents true rapid-fire dupes.
 
     result = get_word_meaning(word)
 
@@ -371,80 +376,6 @@ def process_queue():
         args=(word, result, click_x, click_y),
         daemon=True,
     ).start()
-
-
-# ───────────────────────────────────────────────
-# TRAY ICON  — green = listening, red = paused
-# ───────────────────────────────────────────────
-class SarasTray(QSystemTrayIcon):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-
-        self._icon_on  = _load_icon(_find_icon("lotus_running_green.ico"), "#27AE60", "ON")
-        self._icon_off = _load_icon(_find_icon("lotus_sleeping_red.ico"),  "#C0392B", "OFF")
-
-        # build menu FIRST — _apply() references _toggle_act
-        menu = QMenu()
-        self._toggle_act = QAction()
-        self._toggle_act.triggered.connect(STATE.toggle)
-        menu.addAction(self._toggle_act)
-
-        menu.addSeparator()
-        quit_act = QAction("Quit SARAS")
-        quit_act.triggered.connect(self._quit)
-        menu.addAction(quit_act)
-
-        self.setContextMenu(menu)
-        self.activated.connect(self._on_activate)
-
-        # now safe to call _apply — _toggle_act exists
-        self._last_known = None
-        self._apply(STATE.active)
-
-        # signal-based sync
-        STATE.toggled.connect(self._apply)
-
-        # poll every 500ms as safety net for cross-thread updates
-        self._poll = QTimer()
-        self._poll.timeout.connect(self._poll_state)
-        self._poll.start(500)
-
-        self.show()
-
-        self.showMessage(
-            "SARAS",
-            "Running in the background. Double-click any word to look it up.",
-            QSystemTrayIcon.MessageIcon.Information,
-            3000
-        )
-
-    def _poll_state(self):
-        """Catches any state changes that the signal missed (cross-thread safety)."""
-        if STATE.active != self._last_known:
-            self._apply(STATE.active)
-
-    def _apply(self, active):
-        self._last_known = active
-        self.setIcon(self._icon_on if active else self._icon_off)
-        self.setToolTip("SARAS — Active" if active else "SARAS — Paused")
-        self._toggle_act.setText("Turn Off" if active else "Turn On")
-
-    def _on_activate(self, reason):
-        # double-click tray icon → toggle
-        if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
-            STATE.toggle()
-
-    def _quit(self):
-        if controller:
-            controller.stop()
-        # Tell Electron to shut down cleanly — it will also kill this process
-        try:
-            import httpx
-            with httpx.Client(timeout=2) as c:
-                c.post("http://127.0.0.1:5001/quit")
-        except Exception:
-            pass  # if Electron is already gone, just quit directly
-        QApplication.instance().quit()
 
 
 # ───────────────────────────────────────────────
@@ -468,7 +399,10 @@ class ToggleRequest(BaseModel):
 
 @api.get("/status")
 def get_status():
-    """Electron polls this every 2 s to keep UI in sync with tray."""
+    """Electron polls this every 3 s to keep UI in sync with tray."""
+    if not is_activated():
+        return {"listening": False, "trigger_mode": "double_click"}
+
     return {
         "listening":    STATE.active,
         "trigger_mode": STATE.trigger_mode,
@@ -481,6 +415,9 @@ def post_toggle(body: ToggleRequest):
     Electron calls this when user changes toggle or trigger mode.
     STATE change automatically syncs the tray icon via Qt signal.
     """
+    if not is_activated():
+        return {"error": "not activated"}
+
     STATE.set_active(body.listening)
     STATE.set_trigger_mode(body.trigger_mode)
 
@@ -504,6 +441,9 @@ async def define_word(word: str):
     1. Query local DB first.
     2. If not found, fall back to dictionaryapi.dev.
     """
+    if not is_activated():
+        return {"error": "not activated"}
+
     if not word or not word.strip():
         return {"error": "empty word"}
 
@@ -633,15 +573,18 @@ async def activate_license(body: ActivateRequest):
 def start_listener():
     """
     Called by main.js after first-time activation via navigate-to-main.
-    Single entry point — starts listener and flags Qt thread to show tray.
+    Starts the listener if it isn't already running.
     """
+    if not is_activated():
+        print("[SARAS] /start-listener blocked — not activated", flush=True)
+        return { "ok": False, "error": "not activated" }
+
     if controller and not controller.is_running():
         controller.start()
         print("[SARAS] Listener started via /start-listener", flush=True)
     else:
         print("[SARAS] /start-listener: listener already running", flush=True)
 
-    _tray_needed.set()
     return { "ok": True }
 
 
@@ -686,24 +629,7 @@ def main():
     # ── Queue processor (popup timer) ───────────
     queue_timer = QTimer()
     queue_timer.timeout.connect(process_queue)
-    queue_timer.start(100)
-
-    # ── Tray check timer — creates tray on Qt thread after activation ──
-    def _check_tray_needed():
-        global tray
-        if tray is None and _tray_needed.is_set():
-            tray = SarasTray()
-            _tray_needed.clear()
-            print("[SARAS] Tray icon created after activation", flush=True)
-
-    tray_check_timer = QTimer()
-    tray_check_timer.timeout.connect(_check_tray_needed)
-    tray_check_timer.start(300)
-
-    # ── Tray — only show if user is already activated ────
-    tray = SarasTray() if is_activated() else None
-    if not tray:
-        print("[SARAS] Not activated — tray icon held until activation", flush=True)
+    queue_timer.start(50)    # 50ms poll — avg 25ms faster response
 
     # ── FastAPI in background thread ─────────────
     api_thread = threading.Thread(target=_run_api, daemon=True)

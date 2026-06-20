@@ -23,6 +23,46 @@ def execute_query(query,params=(),fetch = False):
     connect.close()
 
 
+def _get_root_forms(word: str):
+    """
+    Returns a list of progressively simpler forms to try, in order.
+    No external libraries needed.
+    """
+    candidates = [word]
+    
+    # Strip common suffixes one at a time
+    if word.endswith("ers"):
+        candidates.append(word[:-3])    # collectors → collect
+        candidates.append(word[:-2])    # collectors → collector  
+        candidates.append(word[:-1])    # collectors → collectors (redundant but safe)
+    if word.endswith("ors"):
+        candidates.append(word[:-3])
+        candidates.append(word[:-1])    # ors → or
+    if word.endswith("ing"):
+        candidates.append(word[:-3])    # panning → pann → won't help
+        candidates.append(word[:-3] + "e")  # panning → panne (edge case)
+    if word.endswith("ies"):
+        candidates.append(word[:-3] + "y")  # cities → city
+    if word.endswith("es"):
+        candidates.append(word[:-2])    # beaches → beach
+    if word.endswith("s"):
+        candidates.append(word[:-1])    # streets → street
+    if word.endswith("ed"):
+        candidates.append(word[:-2])    # walked → walk
+        candidates.append(word[:-1])    # walked → walke (edge case, skip)
+    if word.endswith("er"):
+        candidates.append(word[:-2])    # faster → fast
+    
+    # Deduplicate while preserving order
+    seen = set()
+    result = []
+    for c in candidates:
+        if c and c not in seen:
+            seen.add(c)
+            result.append(c)
+    return result
+
+
 def get_word_meaning(word: str):
     if not word or not word.strip():
         print("[DB] Empty word skipped", flush=True)
@@ -31,31 +71,30 @@ def get_word_meaning(word: str):
     query = '''
         SELECT definition, examples, synonm
         FROM Dictionary
-        WHERE word1 = ?
+        WHERE word1 = ? COLLATE NOCASE
     '''
 
-    try:
-        result = execute_query(query, (word.lower(),), fetch=True)
-        
-        if result and len(result) > 0:
-            definition, examples_str, synonyms_str = result[0]
-            
-            examples = examples_str.split(',') if examples_str else []
-            synonyms = synonyms_str.split(',') if synonyms_str else []
-            
-            return {
-                'word': word,
-                'definition': definition or "No definition available",
-                'examples': [ex.strip() for ex in examples if ex.strip()],
-                'synonyms': [syn.strip() for syn in synonyms if syn.strip()]
-            }
-        
-        print(f"[DB] Word '{word}' not found in 'words' table")
-        return None
+    root_forms = _get_root_forms(word.lower())
     
-    except sqlite3.Error as e:
-        print(f"[DB] Lookup failed for '{word}': {e}", flush=True)
-        return None
+    for candidate in root_forms:
+        try:
+            result = execute_query(query, (candidate,), fetch=True)
+            if result and len(result) > 0:
+                definition, examples_str, synonyms_str = result[0]
+                examples = examples_str.split(',') if examples_str else []
+                synonyms = synonyms_str.split(',') if synonyms_str else []
+                print(f"[DB] '{word}' matched via '{candidate}'", flush=True)
+                return {
+                    'word': word,
+                    'definition': definition or "No definition available",
+                    'examples': [ex.strip() for ex in examples if ex.strip()],
+                    'synonyms': [syn.strip() for syn in synonyms if syn.strip()]
+                }
+        except sqlite3.Error as e:
+            print(f"[DB] Lookup failed for '{candidate}': {e}", flush=True)
+
+    print(f"[DB] '{word}' not found even after root matching", flush=True)
+    return None
 
 
 # ───────────────────────────────────────────────
@@ -110,6 +149,8 @@ def save_user_profile(first_name: str, last_name: str, email: str, license_key: 
 def get_user_profile():
     """Returns the stored user profile dict, or None if not activated yet."""
     try:
+        print(f"[DB] Reading profile from: {PROFILE_DB_PATH}", flush=True)
+        print(f"[DB] File exists: {os.path.exists(PROFILE_DB_PATH)}", flush=True)
         connect = sqlite3.connect(PROFILE_DB_PATH)
         cursor = connect.cursor()
         cursor.execute('''
@@ -121,6 +162,7 @@ def get_user_profile():
         connect.close()
 
         if row:
+            print(f"[DB] Profile found: {row[0]} {row[1]}", flush=True)
             return {
                 'first_name':   row[0],
                 'last_name':    row[1],
@@ -128,6 +170,7 @@ def get_user_profile():
                 'license_key':  row[3],
                 'activated_at': row[4],
             }
+        print("[DB] Profile table exists but has NO rows", flush=True)
         return None
 
     except sqlite3.Error as e:

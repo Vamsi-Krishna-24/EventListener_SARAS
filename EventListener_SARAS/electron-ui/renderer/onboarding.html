@@ -245,6 +245,70 @@
     animation: fadeUp 0.6s 0.6s cubic-bezier(0.22,1,0.36,1) forwards;
   }
 
+  /* Consent row */
+  .consent-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    width: 100%;
+    margin-top: 2px;
+  }
+
+  .consent-checkbox {
+    appearance: none;
+    -webkit-appearance: none;
+    flex-shrink: 0;
+    width: 15px;
+    height: 15px;
+    margin-top: 1px;
+    border: 1px solid rgba(229,227,220,0.28);
+    border-radius: 2px;
+    background: rgba(255,255,255,0.04);
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
+    position: relative;
+  }
+  .consent-checkbox:hover {
+    border-color: rgba(196,160,85,0.55);
+    background: rgba(196,160,85,0.06);
+  }
+  .consent-checkbox:checked {
+    background: var(--gold);
+    border-color: var(--gold);
+    box-shadow: 0 0 8px rgba(196,160,85,0.3);
+  }
+  .consent-checkbox:checked::after {
+    content: '';
+    position: absolute;
+    left: 4px;
+    top: 1.5px;
+    width: 4px;
+    height: 7px;
+    border: 1.5px solid var(--ink);
+    border-top: none;
+    border-left: none;
+    transform: rotate(45deg);
+  }
+
+  .consent-label {
+    font-size: 0.7rem;
+    font-weight: 300;
+    color: var(--faint);
+    letter-spacing: 0.03em;
+    line-height: 1.55;
+    cursor: pointer;
+  }
+  .consent-label a {
+    color: var(--gold);
+    text-decoration: none;
+    border-bottom: 1px solid rgba(196,160,85,0.3);
+    transition: border-color 0.15s, color 0.15s;
+  }
+  .consent-label a:hover {
+    color: #d4b065;
+    border-bottom-color: rgba(196,160,85,0.7);
+  }
+
   /* Footer note */
   .footer-note {
     position: absolute;
@@ -293,17 +357,29 @@
           />
         </div>
 
+        <div class="consent-row">
+          <input type="checkbox" id="consentCheck" class="consent-checkbox" onchange="onConsentChange()" />
+          <label class="consent-label" for="consentCheck">
+            By activating SARAS you agree to our
+            <a href="https://getsaras.com/accounts/tos/" target="_blank">Terms of Service</a>
+            and
+            <a href="https://getsaras.com/accounts/privacy_policy/" target="_blank">Privacy Policy</a>
+          </label>
+        </div>
+
         <button id="ctaBtn" class="cta-btn" onclick="activate()" disabled>
           Activate SARAS
         </button>
 
-        <p id="hint" class="hint">Your license key was emailed to you on purchase.</p>
+        <p id="hint" class="hint">
+  Don't have a license? <a href="https://getsaras.com/accounts/register/" target="_blank" style="color:var(--gold);text-decoration:none;border-bottom:1px solid rgba(196,160,85,0.3);">Sign up at getsaras.com</a> to get one.
+</p>
       </div>
 
       <div class="bottom-rule"></div>
     </div>
 
-    <span class="footer-note">© 2025 SARAS · Made for curious readers</span>
+    <span class="footer-note">© 2065 SARAS · Made for curious readers</span>
 
   </div>
 
@@ -312,13 +388,22 @@ const { ipcRenderer } = require('electron');
 
 function win(action) { ipcRenderer.send('window-' + action); }
 
-// Enable button once user has typed at least 6 characters
+// Enable button only when license ≥6 chars AND consent is checked
+function updateBtn() {
+  const key     = document.getElementById('licenseInput').value.trim();
+  const consent = document.getElementById('consentCheck').checked;
+  document.getElementById('ctaBtn').disabled = key.length < 6 || !consent;
+}
+
 function onLicenseInput(input) {
-  const btn  = document.getElementById('ctaBtn');
   const hint = document.getElementById('hint');
-  btn.disabled = input.value.trim().length < 6;
   hint.textContent = 'Your license key was emailed to you on purchase.';
   hint.className = 'hint';
+  updateBtn();
+}
+
+function onConsentChange() {
+  updateBtn();
 }
 
 async function activate() {
@@ -340,6 +425,14 @@ async function activate() {
       body: JSON.stringify({ license_key: key })
     });
     const data = await res.json();
+
+    if (res.status === 400) {
+      hint.textContent = 'This license is already activated on another device.';
+      hint.className = 'hint error';
+      btn.disabled = false;
+      btn.textContent = 'Activate SARAS';
+      return;
+    }
 
     if (data.success) {
       hint.textContent = `Welcome, ${data.first_name}! Opening SARAS…`;
