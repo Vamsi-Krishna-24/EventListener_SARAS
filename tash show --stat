@@ -1,0 +1,175 @@
+[1mdiff --git a/EventListener_SARAS/__pycache__/db_handler.cpython-313.pyc b/EventListener_SARAS/__pycache__/db_handler.cpython-313.pyc[m
+[1mindex 5fbf3f0..d47067d 100644[m
+Binary files a/EventListener_SARAS/__pycache__/db_handler.cpython-313.pyc and b/EventListener_SARAS/__pycache__/db_handler.cpython-313.pyc differ
+[1mdiff --git a/EventListener_SARAS/__pycache__/listener1.cpython-313.pyc b/EventListener_SARAS/__pycache__/listener1.cpython-313.pyc[m
+[1mindex d92cee1..c5ac236 100644[m
+Binary files a/EventListener_SARAS/__pycache__/listener1.cpython-313.pyc and b/EventListener_SARAS/__pycache__/listener1.cpython-313.pyc differ
+[1mdiff --git a/EventListener_SARAS/db_handler.py b/EventListener_SARAS/db_handler.py[m
+[1mindex b97467c..ab29f81 100644[m
+[1m--- a/EventListener_SARAS/db_handler.py[m
+[1m+++ b/EventListener_SARAS/db_handler.py[m
+[36m@@ -1,6 +1,7 @@[m
+ import sqlite3[m
+ import os[m
+ import sys[m
+[32m+[m[32mfrom datetime import datetime, timezone[m
+ [m
+ # ───────────────────────────────────────────────[m
+ # DICTIONARY DB  — stays in install directory (read-only bundled content)[m
+[36m@@ -9,16 +10,16 @@[m [mBASE_DIR = os.path.dirname(os.path.abspath(__file__))[m
+ DB_PATH = os.path.join(BASE_DIR, "Dictionary.db")[m
+ [m
+ [m
+[31m-def execute_query(query,params=(),fetch = False):  [m
+[32m+[m[32mdef execute_query(query, params=(), fetch=False):[m
+     connect = sqlite3.connect(DB_PATH)[m
+     cursor = connect.cursor()[m
+[31m-    cursor.execute(query,params)[m
+[32m+[m[32m    cursor.execute(query, params)[m
+ [m
+     if fetch:[m
+         result = cursor.fetchall()[m
+         connect.close()[m
+         return result[m
+[31m-    [m
+[32m+[m
+     connect.commit()[m
+     connect.close()[m
+ [m
+[36m@@ -29,31 +30,29 @@[m [mdef _get_root_forms(word: str):[m
+     No external libraries needed.[m
+     """[m
+     candidates = [word][m
+[31m-    [m
+[31m-    # Strip common suffixes one at a time[m
+[32m+[m
+     if word.endswith("ers"):[m
+[31m-        candidates.append(word[:-3])    # collectors → collect[m
+[31m-        candidates.append(word[:-2])    # collectors → collector  [m
+[31m-        candidates.append(word[:-1])    # collectors → collectors (redundant but safe)[m
+[32m+[m[32m        candidates.append(word[:-3])[m
+[32m+[m[32m        candidates.append(word[:-2])[m
+[32m+[m[32m        candidates.append(word[:-1])[m
+     if word.endswith("ors"):[m
+         candidates.append(word[:-3])[m
+[31m-        candidates.append(word[:-1])    # ors → or[m
+[32m+[m[32m        candidates.append(word[:-1])[m
+     if word.endswith("ing"):[m
+[31m-        candidates.append(word[:-3])    # panning → pann → won't help[m
+[31m-        candidates.append(word[:-3] + "e")  # panning → panne (edge case)[m
+[32m+[m[32m        candidates.append(word[:-3])[m
+[32m+[m[32m        candidates.append(word[:-3] + "e")[m
+     if word.endswith("ies"):[m
+[31m-        candidates.append(word[:-3] + "y")  # cities → city[m
+[32m+[m[32m        candidates.append(word[:-3] + "y")[m
+     if word.endswith("es"):[m
+[31m-        candidates.append(word[:-2])    # beaches → beach[m
+[32m+[m[32m        candidates.append(word[:-2])[m
+     if word.endswith("s"):[m
+[31m-        candidates.append(word[:-1])    # streets → street[m
+[32m+[m[32m        candidates.append(word[:-1])[m
+     if word.endswith("ed"):[m
+[31m-        candidates.append(word[:-2])    # walked → walk[m
+[31m-        candidates.append(word[:-1])    # walked → walke (edge case, skip)[m
+[32m+[m[32m        candidates.append(word[:-2])[m
+[32m+[m[32m        candidates.append(word[:-1])[m
+     if word.endswith("er"):[m
+[31m-        candidates.append(word[:-2])    # faster → fast[m
+[31m-    [m
+[31m-    # Deduplicate while preserving order[m
+[32m+[m[32m        candidates.append(word[:-2])[m
+[32m+[m
+     seen = set()[m
+     result = [][m
+     for c in candidates:[m
+[36m@@ -75,7 +74,7 @@[m [mdef get_word_meaning(word: str):[m
+     '''[m
+ [m
+     root_forms = _get_root_forms(word.lower())[m
+[31m-    [m
+[32m+[m
+     for candidate in root_forms:[m
+         try:[m
+             result = execute_query(query, (candidate,), fetch=True)[m
+[36m@@ -98,8 +97,8 @@[m [mdef get_word_meaning(word: str):[m
+ [m
+ [m
+ # ───────────────────────────────────────────────[m
+[31m-# PROFILE DB  — lives in AppData\Roaming\SARAS\[m
+[31m-#               survives app uninstall/reinstall[m
+[32m+[m[32m# PROFILE / ENTITLEMENT DB  — lives in AppData\Roaming\SARAS\[m
+[32m+[m[32m#                             survives app uninstall/reinstall[m
+ # ───────────────────────────────────────────────[m
+ def get_profile_db_path():[m
+     appdata = os.environ.get('APPDATA', os.path.expanduser('~'))[m
+[36m@@ -110,11 +109,60 @@[m [mdef get_profile_db_path():[m
+ [m
+ PROFILE_DB_PATH = get_profile_db_path()[m
+ [m
+[32m+[m[32m# ── Free-tier policy ──────────────────────────────────────────────[m
+[32m+[m[32mDAILY_CAP = 5          # lookups/day once the trial ends[m
+[32m+[m[32mTRIAL_DAYS = 7         # informational; trial_ends_at is authoritative (from server)[m
+[32m+[m[32mDISCOUNT_WINDOW_HOURS = 48[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef _connect():[m
+[32m+[m[32m    return sqlite3.connect(PROFILE_DB_PATH)[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef _now_iso():[m
+[32m+[m[32m    return datetime.now(timezone.utc).isoformat()[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef _today_str():[m
+[32m+[m[32m    """Local calendar date — a 'day' from the user's perspective."""[m
+[32m+[m[32m    return datetime.now().strftime("%Y-%m-%d")[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef _this_month_str():[m
+[32m+[m[32m    return datetime.now().strftime("%Y-%m")[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef _parse_iso(s):[m
+[32m+[m[32m    if not s:[m
+[32m+[m[32m        return None[m
+[32m+[m[32m    try:[m
+[32m+[m[32m        s = s.replace('Z', '+00:00')[m
+[32m+[m[32m        dt = datetime.fromisoformat(s)[m
+[32m+[m[32m        if dt.tzinfo is None:[m
+[32m+[m[32m            dt = dt.replace(tzinfo=timezone.utc)[m
+[32m+[m[32m        return dt[m
+[32m+[m[32m    except Exception:[m
+[32m+[m[32m        return None[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef _ensure_column(cursor, table, col, decl):[m
+[32m+[m[32m    cursor.execute(f"PRAGMA table_info({table})")[m
+[32m+[m[32m    existing = [r[1] for r in cursor.fetchall()][m
+[32m+[m[32m    if col not in existing:[m
+[32m+[m[32m        cursor.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")[m
+[32m+[m
+ [m
+ def init_profile_db():[m
+[31m-    """Creates the user_profile table if it doesn't already exist."""[m
+[31m-    connect = sqlite3.connect(PROFILE_DB_PATH)[m
+[32m+[m[32m    """[m
+[32m+[m[32m    Creates / migrates the profile DB.[m
+[32m+[m[32m    Safe to run on every launch. Existing paid installs are migrated in place:[m
+[32m+[m[32m    new columns are added and any row that already has a license_key is[m
+[32m+[m[32m    backfilled to tier='paid'.[m
+[32m+[m[32m    """[m
+[32m+[m[32m    connect = _connect()[m
+     cursor = connect.cursor()[m
+[32m+[m
+[32m+[m[32m    # Base table (original shape kept so old installs ALTER cleanly)[m
+     cursor.execute('''[m
+         CREATE TABLE IF NOT EXISTS user_profile ([m
+             id            INTEGER PRIMARY KEY,[m
+[36m@@ -125,60 +173,264 @@[m [mdef init_profile_db():[m
+             activated_at  TEXT NOT NULL[m
+         )[m
+     ''')[m
+[32m+[m
+[32m+[m[32m    # New entitlement columns[m
+[32m+[m[32m    _ensure_column(cursor, 'user_profile', 'tier',           "TEXT")[m
+[32m+[m[32m    _ensure_column(cursor, 'user_prof

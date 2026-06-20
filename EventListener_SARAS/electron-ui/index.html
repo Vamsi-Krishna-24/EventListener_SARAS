@@ -783,6 +783,180 @@
 .version-label { font-size:0.6rem; font-weight:400; letter-spacing:0.15em; color:rgba(255,255,255,0.25); text-transform:uppercase; }
 .version-number { font-size:0.72rem; font-weight:500; letter-spacing:0.08em; color:var(--gold); opacity:0.75; }
 .version-build { font-size:0.58rem; color:rgba(255,255,255,0.18); letter-spacing:0.05em; font-weight:300; }
+
+
+<!--SarAI STyle-->
+/* ── SAR-AI PREMIUM INTERFACE STYLES ── */
+  @keyframes saraiPulse {
+      0%, 100% { opacity: 0.3; transform: scale(0.9); }
+      50% { opacity: 1; transform: scale(1.3); filter: drop-shadow(0 0 5px #ffd700); }
+  }
+
+  .sarai-app-logo {
+      width: 110px;
+      height: 110px;
+      object-fit: contain;
+      filter: drop-shadow(0px 15px 25px rgba(0, 0, 0, 0.85)) drop-shadow(0px 0px 35px rgba(212, 175, 55, 0.25));
+      animation: saraiFloat 6s infinite ease-in-out;
+  }
+
+  @keyframes saraiFloat {
+      0%, 100% { transform: translateY(0px) scale(1); }
+      50% { transform: translateY(-8px) scale(1.02); filter: drop-shadow(0px 20px 30px rgba(0, 0, 0, 0.9)) drop-shadow(0px 0px 45px rgba(212, 175, 55, 0.35)); }
+  }
+
+  .sarai-glass-button {
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, rgba(212, 175, 55, 0.01) 100%);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(212, 175, 55, 0.3);
+      border-top: 1px solid rgba(255, 255, 255, 0.25);
+      border-bottom: 1px solid rgba(212, 175, 55, 0.15);
+      padding: 18px 56px;
+      border-radius: 40px;
+      cursor: pointer;
+      outline: none;
+      position: relative;
+      overflow: hidden;
+      color: #ffffff;
+      font-family: 'Outfit', sans-serif;
+      font-size: 16px;
+      font-weight: 600;
+      letter-spacing: 6px;
+      text-transform: uppercase;
+      text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5), inset 0 1px 2px rgba(255, 255, 255, 0.15);
+      transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .sarai-glass-button::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 50%;
+      height: 100%;
+      background: linear-gradient(to right, rgba(255,255,255,0) 0%, rgba(255,255,255,0.13) 50%, rgba(255,255,255,0) 100%);
+      transform: skewX(-25deg);
+  }
+
+  .sarai-glass-button:hover::before {
+      left: 150%;
+      transition: all 0.8s ease-in-out;
+  }
+
+  .sarai-glass-button:hover {
+      border-color: rgba(212, 175, 55, 0.7);
+      box-shadow: 0 0 30px rgba(212, 175, 55, 0.25), 0 20px 40px rgba(0, 0, 0, 0.6);
+      letter-spacing: 8px;
+  }
+
+  .sarai-live-container {
+      position: absolute;
+      bottom: -20px;
+      left: 0;
+      width: 100%;
+      height: 40%;
+      overflow: hidden;
+      pointer-events: none;
+      z-index: 10;
+  }
+
+  .sarai-particle-canvas {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      mix-blend-mode: screen;
+      opacity: 0.65;
+      z-index: 15;
+  }
+
+  .sarai-breathing-wrapper {
+      width: 100%;
+      height: 100%;
+      position: relative;
+      animation: saraiBreathe 9s infinite ease-in-out;
+      transform-origin: bottom center;
+      filter: blur(28px);
+  }
+
+  .sarai-wave {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      width: 200%;
+      height: 100%;
+      background-repeat: repeat-x;
+      transform-origin: bottom center;
+  }
+
+  .sarai-wave1 {
+      background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 120" preserveAspectRatio="none"><path d="M0,60 C150,85 300,35 500,60 C700,85 900,35 1000,60 C1150,85 1300,35 1500,60 L1500,120 L0,120 Z" fill="rgba(130, 93, 26, 0.28)"/></svg>');
+      background-size: 50% 100%;
+      animation: saraiLeft 22s linear infinite;
+      z-index: 1;
+  }
+
+  .sarai-wave2 {
+      background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 120" preserveAspectRatio="none"><path d="M0,45 C250,15 450,75 650,45 C850,15 1050,75 1250,45 L1250,120 L0,120 Z" fill="rgba(212, 175, 55, 0.38)"/></svg>');
+      background-size: 50% 100%;
+      animation: saraiRight 14s linear infinite;
+      z-index: 2;
+  }
+
+  .sarai-wave3 {
+      background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 120" preserveAspectRatio="none"><path d="M0,55 C120,40 280,80 420,55 C580,30 740,80 880,55 C1020,30 1180,80 1320,55 L1320,120 L0,120 Z" fill="rgba(244, 221, 156, 0.25)"/></svg>');
+      background-size: 50% 100%;
+      animation: saraiLeft 17s linear infinite;
+      z-index: 3;
+  }
+
+  @keyframes saraiBreathe {
+      0%, 100% { transform: scaleY(0.84) scaleX(1); opacity: 0.65; }
+      50% { transform: scaleY(1.14) scaleX(1.01); opacity: 0.95; }
+  }
+
+  @keyframes saraiLeft {
+      0% { transform: translateX(0); }
+      100% { transform: translateX(-50%); }
+  }
+
+  @keyframes saraiRight {
+      0% { transform: translateX(-50%); }
+      100% { transform: translateX(0); }
+  }
+
+  /* Modal Overlays */
+  .sarai-modal-overlay {
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(3, 3, 3, 0.75);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 100; opacity: 0; pointer-events: none;
+      transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .sarai-modal-overlay.active { opacity: 1; pointer-events: auto; }
+
+  .sarai-glass-modal {
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.04) 0%, rgba(212, 175, 55, 0.01) 100%);
+      border: 1px solid rgba(212, 175, 55, 0.25);
+      border-radius: 24px; padding: 48px 56px; max-width: 420px; width: 85%; text-align: center;
+      box-shadow: 0 40px 80px rgba(0, 0, 0, 0.8);
+      transform: scale(0.92) translateY(30px);
+      transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .sarai-modal-overlay.active .sarai-glass-modal { transform: scale(1) translateY(0); }
+  .sarai-modal-title { font-family: 'Playfair Display', serif; color: #d4af37; font-size: 22px; letter-spacing: 5px; text-transform: uppercase; margin-bottom: 16px; }
+  .sarai-modal-text { font-family: 'Outfit', sans-serif; color: rgba(255, 255, 255, 0.65); font-size: 13px; letter-spacing: 2px; line-height: 1.7; margin-bottom: 32px; }
+  .sarai-close-btn { font-family: 'Outfit', sans-serif; background: ...; border: ...; ... }
+  .sarai-close-btn:hover { background: rgba(212, 175, 55, 0.12); color: #d4af37; border-color: #d4af37; }
+
 </style>
 </head>
 <body>
@@ -823,6 +997,17 @@
         </svg>
         <span class="nav-label">Settings</span>
       </button>
+
+<!--Sar AI button-->
+<button class="nav-item" id="nav-sarai" onclick="showPanel('sarai')">
+    <svg class="nav-icon" viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2"></polygon>
+      <polyline points="12 22 12 12"></polyline>
+      <polyline points="22 8.5 12 12 2 8.5"></polyline>
+      <polyline points="22 15.5 12 12 2 15.5"></polyline>
+    </svg>
+    <span class="nav-label">Sar-AI</span>
+  </button>
 
       <button class="nav-item" onclick="showPanel('support')" id="nav-support">
         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
@@ -932,6 +1117,40 @@
         </div>
       </div>
     </div>
+
+
+    <!--Sar AI-->
+    <div class="panel" id="panel-sarai" style="padding: 0; background: radial-gradient(circle at center, #0c0b08 0%, #030303 100%); position: relative; overflow: hidden; display: none; justify-content: center; align-items: center; min-height: 500px; width: 100%; height: 100%;">
+    
+    <div class="sarai-status-header" style="position: absolute; top: 30px; width: 100%; display: flex; justify-content: center; align-items: center; z-index: 30;">
+        <div class="sarai-status-indicator" style="display: flex; align-items: center; gap: 10px; color: #d4af37; font-size: 11px; font-weight: 600; letter-spacing: 4px; text-transform: uppercase; opacity: 0.5;">
+            <div class="sarai-status-dot" style="width: 5px; height: 5px; background-color: #ffd700; border-radius: 50%; box-shadow: 0 0 10px #ffd700; animation: saraiPulse 2.5s infinite ease-in-out;"></div>
+            Live Environment
+        </div>
+    </div>
+
+    <div class="sarai-brand-hub" style="display: flex; flex-direction: column; align-items: center; gap: 32px; position: relative; z-index: 40; text-align: center; transform: translateY(-20px);">
+        <img src="lotus_coin_v2.ico" alt="Lotus Logo" class="sarai-app-logo">
+        <button class="sarai-glass-button" id="saraiTriggerBtn">Sar-AI</button>
+    </div>
+
+    <div class="sarai-modal-overlay" id="saraiModalOverlay">
+        <div class="sarai-glass-modal">
+            <h2 class="sarai-modal-title">Coming Soon</h2>
+            <p class="sarai-modal-text">The next evolution of structured intelligence mapping is currently being engineered.</p>
+            <button class="sarai-close-btn" id="saraiCloseBtn">Dismiss</button>
+        </div>
+    </div>
+
+    <div class="sarai-live-container">
+        <canvas class="sarai-particle-canvas" id="saraiParticleCanvas"></canvas>
+        <div class="sarai-breathing-wrapper">
+            <div class="sarai-wave sarai-wave1"></div>
+            <div class="sarai-wave sarai-wave2"></div>
+            <div class="sarai-wave sarai-wave3"></div>
+        </div>
+    </div>
+</div>
 
     <!-- SUPPORT PANEL -->
     <div class="panel" id="panel-support" style="overflow-y:auto;">
@@ -1051,12 +1270,39 @@ function toggleSidebar() {
 
 // ── Panel switching ──────────────────────────────────────────
 function showPanel(name) {
-  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
-  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-  document.getElementById('panel-' + name).classList.add('active');
-  document.getElementById('nav-' + name).classList.add('active');
-}
+  // Hide all panels completely first
+  document.querySelectorAll('.panel').forEach(p => {
+    p.classList.remove('active');
+    p.style.display = 'none'; 
+  });
+  
+  // Clear active styling outlines from all tab links
+  document.querySelectorAll('.nav-item').forEach(n => {
+    n.classList.remove('active');
+  });
+  
+  // Target current nodes safely
+  const targetPanel = document.getElementById('panel-' + name);
+  const targetNav = document.getElementById('nav-' + name);
 
+  if (targetPanel) {
+    targetPanel.classList.add('active');
+    targetPanel.style.display = 'flex'; // Force display on
+  }
+
+  if (targetNav) {
+    targetNav.classList.add('active');
+  }
+
+  // Trigger custom animations if switching to Sar-AI
+  if (name === 'sarai') {
+    if (typeof resizeSaraiCanvas === 'function') {
+      setTimeout(() => {
+        resizeSaraiCanvas();
+      }, 30);
+    }
+  }
+}
 // ── Trigger selection → POST /toggle ────────────────────────
 // Maps UI ids ('dblclick'/'longpress') to backend values
 const TRIGGER_MAP = { dblclick: 'double_click', longpress: 'long_press' };
@@ -1272,6 +1518,73 @@ async function loadGreeting() {
 }
 
 loadGreeting();
+
+
+// ── SAR-AI SUB-CONTROLLERS ──────────────────────────────────────
+const sTrigger = document.getElementById('saraiTriggerBtn');
+const sClose = document.getElementById('saraiCloseBtn');
+const sOverlay = document.getElementById('saraiModalOverlay');
+
+sTrigger.addEventListener('click', () => sOverlay.classList.add('active'));
+sClose.addEventListener('click', () => sOverlay.classList.remove('active'));
+sOverlay.addEventListener('click', (e) => { if (e.target === sOverlay) sOverlay.classList.remove('active'); });
+
+// Canvas Core Ambient Engine
+const sCanvas = document.getElementById('saraiParticleCanvas');
+const sCtx = sCanvas.getContext('2d');
+let sParticles = [];
+const sMaxParticles = 45;
+
+function resizeSaraiCanvas() {
+    sCanvas.width = sCanvas.parentElement.clientWidth;
+    sCanvas.height = sCanvas.parentElement.clientHeight;
+}
+
+class SaraiParticle {
+    constructor() { 
+        this.reset(); 
+        this.y = Math.random() * sCanvas.height; 
+    }
+    reset() {
+        this.x = Math.random() * sCanvas.width;
+        this.y = sCanvas.height + Math.random() * 20;
+        this.size = Math.random() * 1.8 + 0.4;
+        this.speedY = Math.random() * 0.35 + 0.15;
+        this.speedX = Math.sin(Math.random() * 2) * 0.15;
+        this.opacity = Math.random() * 0.5 + 0.1;
+    }
+    update() {
+        this.y -= this.speedY;
+        this.x += this.speedX;
+        this.currentOpacity = this.opacity * (this.y / sCanvas.height);
+        if (this.y < 0 || this.currentOpacity <= 0) this.reset();
+    }
+    draw() {
+        sCtx.beginPath();
+        sCtx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+        sCtx.fillStyle = `rgba(212, 175, 55, ${this.currentOpacity})`;
+        sCtx.fill();
+    }
+}
+
+function initSaraiAtmosphere() {
+    resizeSaraiCanvas();
+    sParticles = [];
+    for(let i=0; i<sMaxParticles; i++) { sParticles.push(new SaraiParticle()); }
+}
+
+function renderSaraiAtmosphere() {
+    sCtx.clearRect(0, 0, sCanvas.width, sCanvas.height);
+    sParticles.forEach(p => { p.update(); p.draw(); });
+    requestAnimationFrame(renderSaraiAtmosphere);
+}
+
+// Hook canvas setup parameters into structural navigation triggers
+window.addEventListener('resize', resizeSaraiCanvas);
+initSaraiAtmosphere();
+renderSaraiAtmosphere();
+
+
 </script>
 </body>
 </html>
