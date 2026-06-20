@@ -422,3 +422,72 @@ class ListenerController:
 
         print(f"[LOG] Word captured via {source}: {text!r}", flush=True)
         self.word_queue.put((text, x, y))
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# GlobalHotkeyWatcher
+# ════════════════════════════════════════════════════════════════════════════
+
+class GlobalHotkeyWatcher:
+    """
+    Listens for a double-press of Left Ctrl and fires `on_double_ctrl()`.
+
+    Runs on its own daemon thread, completely independently of the mouse
+    listener — so it works even when the mouse listener is paused/stopped,
+    letting the user re-enable listening without touching the UI.
+
+    Safety guard: if any non-Ctrl key is pressed between the two Ctrl
+    presses (e.g. Ctrl+C … Ctrl+V), the double-press timer is reset so
+    normal keyboard shortcuts never accidentally trigger a toggle.
+    """
+
+    DOUBLE_PRESS_THRESHOLD = 0.40   # seconds — window to count as double-press
+
+    def __init__(self, on_double_ctrl):
+        self._callback             = on_double_ctrl
+        self._last_ctrl_time       = None
+        self._had_intervening_key  = False
+        self._listener             = None
+        self._lock                 = threading.Lock()
+
+    # ── Public API ────────────────────────────────────────────────────────────
+
+    def start(self):
+        if self._listener and self._listener.running:
+            return
+        self._listener = keyboard.Listener(on_press=self._on_key_press)
+        self._listener.daemon = True
+        self._listener.start()
+        print("[HOTKEY] GlobalHotkeyWatcher started (double Left-Ctrl → toggle)", flush=True)
+
+    def stop(self):
+        if self._listener:
+            self._listener.stop()
+            self._listener = None
+        print("[HOTKEY] GlobalHotkeyWatcher stopped", flush=True)
+
+    def is_running(self) -> bool:
+        return self._listener is not None and self._listener.running
+
+    # ── Key handler ───────────────────────────────────────────────────────────
+
+    def _on_key_press(self, key):
+        if key == keyboard.Key.ctrl_l:
+            now = time.time()
+            with self._lock:
+                last                      = self._last_ctrl_time
+                intervening               = self._had_intervening_key
+                self._last_ctrl_time      = now
+                self._had_intervening_key = False   # reset for the next window
+
+            if last and (now - last) < self.DOUBLE_PRESS_THRESHOLD and not intervening:
+                # Genuine double-press with no other keys in between — reset
+                # the timer so a third press doesn't instantly re-trigger.
+                with self._lock:
+                    self._last_ctrl_time = None
+                print("[HOTKEY] Double Left-Ctrl detected — firing toggle", flush=True)
+                threading.Thread(target=self._callback, daemon=True).start()
+        else:
+            # Any non-Ctrl key between two Ctrl presses → not a hotkey
+            with self._lock:
+                self._had_intervening_key = True

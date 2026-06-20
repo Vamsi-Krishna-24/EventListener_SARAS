@@ -172,7 +172,7 @@ function createWindow() {
 }
 
 // ───────────────────────────────────────────────
-// START PAGE — polls Python, routes to onboarding or main app app
+// START PAGE — polls Python, routes to onboarding or main app
 // ───────────────────────────────────────────────
 const RETRY_DELAY = 800;
 const MAX_RETRIES = app.isPackaged ? 40 : 15; // packaged .exe +more cold-start time
@@ -575,12 +575,9 @@ function createTray() {
   tray = new Tray(iconPath);
   refreshTray();
 
-  // Single-click brings the window up — same as "Open SARAS"
-tray.on('click', () => {
-    if (!mainWindow) createWindow();
-    mainWindow.show();
-    mainWindow.focus();
-  });
+  // Single-click: no-op — user opens the app via right-click → "Open SARAS"
+  // (Removing the click handler prevents the window from appearing as a
+  //  side-effect of the double-click, because Windows fires click→click→double-click)
 
   tray.on('double-click', () => {
     if (isOnboarding) return;  // No listener toggle before activation

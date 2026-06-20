@@ -65,7 +65,7 @@ from db_handler import (
     get_user_profile,
     is_activated,
 )
-from listener1 import ListenerController
+from listener1 import ListenerController, GlobalHotkeyWatcher
 
 print("[SARAS] Imports OK", flush=True)
 
@@ -136,6 +136,25 @@ class AppState(QObject):
 
 STATE      = None   # assigned after QApplication
 controller = None   # ListenerController — assigned in main()
+hotkey_watcher = None  # GlobalHotkeyWatcher — assigned in main()
+
+# ── Activation cache ─────────────────────────────────────────────────────────
+# is_activated() hits the DB every call. process_queue() runs every 50ms,
+# so without caching this causes ~20 DB reads/sec and floods the terminal.
+# Activation status never changes mid-session; we cache it once at startup
+# and update it only when /activate or /start-listener actually changes state.
+_activated_cache: bool | None = None
+
+def _is_activated_cached() -> bool:
+    """Return cached activation state. Falls back to DB only on first call."""
+    global _activated_cache
+    if _activated_cache is None:
+        _activated_cache = is_activated()
+    return _activated_cache
+
+def _set_activated_cache(val: bool):
+    global _activated_cache
+    _activated_cache = val
 
 
 # ───────────────────────────────────────────────
@@ -345,7 +364,7 @@ def _build_and_post(word: str, result: dict | None, click_x: int, click_y: int):
 
 def process_queue():
     """Called every 50 ms by QTimer on the Qt main thread."""
-    if not is_activated():
+    if not _is_activated_cached():
         return
 
     # Drain the whole queue, act only on the latest item
@@ -400,7 +419,7 @@ class ToggleRequest(BaseModel):
 @api.get("/status")
 def get_status():
     """Electron polls this every 3 s to keep UI in sync with tray."""
-    if not is_activated():
+    if not _is_activated_cached():
         return {"listening": False, "trigger_mode": "double_click"}
 
     return {
@@ -415,7 +434,7 @@ def post_toggle(body: ToggleRequest):
     Electron calls this when user changes toggle or trigger mode.
     STATE change automatically syncs the tray icon via Qt signal.
     """
-    if not is_activated():
+    if not _is_activated_cached():
         return {"error": "not activated"}
 
     STATE.set_active(body.listening)
@@ -441,7 +460,7 @@ async def define_word(word: str):
     1. Query local DB first.
     2. If not found, fall back to dictionaryapi.dev.
     """
-    if not is_activated():
+    if not _is_activated_cached():
         return {"error": "not activated"}
 
     if not word or not word.strip():
@@ -549,6 +568,7 @@ async def activate_license(body: ActivateRequest):
                     email=       data["email"],
                     license_key= body.license_key.strip(),
                 )
+                _set_activated_cache(True)   # warm the cache so process_queue stops hitting DB
                 return {
                     "success":    True,
                     "first_name": data["first_name"],
@@ -575,15 +595,22 @@ def start_listener():
     Called by main.js after first-time activation via navigate-to-main.
     Starts the listener if it isn't already running.
     """
-    if not is_activated():
+    if not _is_activated_cached():
         print("[SARAS] /start-listener blocked — not activated", flush=True)
         return { "ok": False, "error": "not activated" }
+
+    _set_activated_cache(True)   # confirm cache is warm
 
     if controller and not controller.is_running():
         controller.start()
         print("[SARAS] Listener started via /start-listener", flush=True)
     else:
         print("[SARAS] /start-listener: listener already running", flush=True)
+
+    # Start hotkey watcher alongside the listener (once, stays running even
+    # when the mouse listener is paused so the hotkey can re-enable it)
+    if hotkey_watcher and not hotkey_watcher.is_running():
+        hotkey_watcher.start()
 
     return { "ok": True }
 
@@ -597,7 +624,7 @@ def _run_api():
 # ENTRY POINT
 # ───────────────────────────────────────────────
 def main():
-    global STATE, controller
+    global STATE, controller, hotkey_watcher
 
     # Qt needs this even though we have no main window
     app = QApplication(sys.argv)
@@ -605,6 +632,7 @@ def main():
 
     # Ensure profile DB + table exist before anything else runs
     init_profile_db()
+    _is_activated_cached()   # warm the cache once — prevents DB reads every 50ms in process_queue
 
     STATE = AppState()
     print(f"[SARAS] STATE ready — active={STATE.active}, trigger={STATE.trigger_mode}", flush=True)
@@ -626,6 +654,18 @@ def main():
     )
     print("[SARAS] Listener wired to STATE", flush=True)
 
+    # ── Global hotkey (double Left-Ctrl) ─────────────────────────
+    # Stays active even when the mouse listener is paused, so the user
+    # can re-enable SARAS without opening the UI.
+    def _on_double_ctrl():
+        new_state = not STATE.active
+        STATE.set_active(new_state)
+        print(f"[HOTKEY] Toggle via double Left-Ctrl → listening={new_state}", flush=True)
+
+    hotkey_watcher = GlobalHotkeyWatcher(on_double_ctrl=_on_double_ctrl)
+    if is_activated():
+        hotkey_watcher.start()
+
     # ── Queue processor (popup timer) ───────────
     queue_timer = QTimer()
     queue_timer.timeout.connect(process_queue)
@@ -639,6 +679,8 @@ def main():
     # ── Ctrl+C in terminal ───────────────────────
     def shutdown(*_):
         controller.stop()
+        if hotkey_watcher:
+            hotkey_watcher.stop()
         queue_timer.stop()
         app.quit()
 
